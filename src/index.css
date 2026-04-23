@@ -1,9 +1,9 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Noto+Sans+Ethiopic:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
 
 @theme {
   --font-sans: "Inter", "Helvetica Neue", Arial, sans-serif;
-  --font-ethiopic: "Kefa", "Ebrima", "Nyala", "Abyssinica SIL", sans-serif;
+  --font-ethiopic: "Noto Sans Ethiopic", "Kefa", "Ebrima", "Nyala", "Abyssinica SIL", sans-serif;
 }
 
 @layer base {
@@ -12,5 +12,35 @@
     padding: 0;
     background: #0f172a;
     color: white;
+  }
+  
+  /* Ensure all Ethiopic text has adequate line-height to prevent vowel collision */
+  .font-ethiopic {
+    line-height: 1.8 !important;
+    padding-top: 0.1em;
+    padding-bottom: 0.1em;
+  }
+}
+
+@layer utilities {
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 4px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .custom-select {
+    background-image: none !important;
   }
 }

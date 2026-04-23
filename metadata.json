@@ -1,8 +1,9 @@
 {
   "name": "ትግሪና ai Geez Keyboard",
-  "description": "A responsive ትግሪና (Geez) keyboard with a dark glassmorphism design and haptic-style animations.",
+  "description": "ትግሪና ai (Geez) keyboard pro 2026",
   "requestFramePermissions": [
-    "microphone"
+    "microphone",
+    "camera"
   ],
   "majorCapabilities": []
 }
