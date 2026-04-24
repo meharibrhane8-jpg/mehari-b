@@ -25,7 +25,8 @@ const getFlagEmoji = (code: string) => {
   const flags: Record<string, string> = {
     'en': '🇺🇸', 'es': '🇪🇸', 'fr': '🇫🇷', 'zh': '🇨🇳', 'tr': '🇹🇷',
     'de': '🇩🇪', 'it': '🇮🇹', 'ru': '🇷🇺', 'ja': '🇯🇵', 'ko': '🇰🇷',
-    'ar': '🇸🇦', 'ti': '🇪🇷', 'am': '🇪🇹', 'hi': '🇮🇳', 'pt': '🇵🇹'
+    'ar': '🇸🇦', 'ti': '🇪🇷', 'am': '🇪🇹', 'hi': '🇮🇳', 'pt': '🇵🇹',
+    'gez': '📜', 'tig': '🇪🇷', 'om': '🇪🇹', 'byn': '🇪🇷', 'sgw': '🇪🇹', 'sid': '🇪🇹'
   };
   return flags[code] || '🌐';
 };
@@ -35,6 +36,12 @@ const WORLD_LANGUAGES = [
   { code: 'ti', name: 'Tigrinya' },
   { code: 'en', name: 'English' },
   { code: 'am', name: 'Amharic' },
+  { code: 'gez', name: 'Ge\'ez (Classical Ethiopic)' },
+  { code: 'tig', name: 'Tigre' },
+  { code: 'om', name: 'Oromo (Ethiopic)' },
+  { code: 'byn', name: 'Blin' },
+  { code: 'sgw', name: 'Sebat Bet Gurage' },
+  { code: 'sid', name: 'Sidamo' },
   { code: 'ar', name: 'Arabic' },
   { code: 'es', name: 'Spanish' },
   { code: 'fr', name: 'French' },
