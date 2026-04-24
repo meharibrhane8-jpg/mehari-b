@@ -1,0 +1,86 @@
+import { useState, useRef, useEffect, useCallback } from 'react';
+  const [text, setText] = useState('');
+  const [isShift, setIsShift] = useState(false);
+  const [activeLanguage, setActiveLanguage] = useState<'english' | 'tigrinya' | 'amharic'>('tigrinya');
+  const [isSymbols, setIsSymbols] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [onboardingPage, setOnboardingPage] = useState(0);
+  const [onboardingSteps, setOnboardingSteps] = useState({
+  const [themeKey, setThemeKey] = useState<ThemeKey>('eritrean');
+  const [listeningTarget, setListeningTarget] = useState<'main' | 'chat'>('main');
+  const [chatSessions, setChatSessions] = useState<{id: string, title: string, messages: ChatMessage[]}[]>(() => {
+  const [activeSessionId, setActiveSessionId] = useState<string>('default');
+  const [chatInput, setChatInput] = useState('');
+  const [chatCursorIndex, setChatCursorIndex] = useState(0);
+  const [keyboardTarget, setKeyboardTarget] = useState<'main' | 'chat'>('main');
+  const [chatSearchQuery, setChatSearchQuery] = useState('');
+  const [showChatSearch, setShowChatSearch] = useState(false);
+  const [interimTranscript, setInterimTranscript] = useState('');
+  const [isAssistantTyping, setIsAssistantTyping] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
+  const [streamingResponse, setStreamingResponse] = useState('');
+  const [displayedStreamingResponse, setDisplayedStreamingResponse] = useState('');
+  const [streamingThought, setStreamingThought] = useState('');
+  const [streamingSources, setStreamingSources] = useState<{title: string, uri: string}[]>([]);
+  const [editingMessageIndex, setEditingMessageIndex] = useState<number | null>(null);
+  const [playingChatTtsIndex, setPlayingChatTtsIndex] = useState<number | null>(null);
+  const [editMessageInput, setEditMessageInput] = useState('');
+  const [isGeneratingTTS, setIsGeneratingTTS] = useState(false);
+  const [audioData, setAudioData] = useState<string | null>(null);
+  const [showChat, setShowChat] = useState(false);
+  const [chatIsMaximized, setChatIsMaximized] = useState(false);
+  const [showChatKeyboard, setShowChatKeyboard] = useState(false);
+  const [chatLanguage, setChatLanguage] = useState(() => localStorage.getItem('chat_language') || 'auto');
+  const [chatSuggestions, setChatSuggestions] = useState<string[]>([]);
+  const [showGroundingPanel, setShowGroundingPanel] = useState(false);
+  const [isLiveMode, setIsLiveMode] = useState(false);
+  const [liveTranscript, setLiveTranscript] = useState('');
+  const [liveResponseTranscript, setLiveResponseTranscript] = useState('');
+  const [isAiSpeaking, setIsAiSpeaking] = useState(false);
+  const [panelSources, setPanelSources] = useState<{ title: string; uri: string }[]>([]);
+  const [masterScale, setMasterScale] = useState<number>(() => {
+  const [lastSnap, setLastSnap] = useState<number>(1.0);
+  const [themeTransparency, setThemeTransparency] = useState<number>(() => {
+  const [toolbarOrder, setToolbarOrder] = useState<string[]>(() => {
+  const [hiddenTools, setHiddenTools] = useState<string[]>(() => {
+  const [keyboardSize, setKeyboardSize] = useState<number>(() => {
+  const [keyScale, setKeyScale] = useState<number>(() => {
+  const [activeKey, setActiveKey] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [showPasteTranslationPrompt, setShowPasteTranslationPrompt] = useState<{ text: string, startIndex: number, endIndex: number } | null>(null);
+  const [isInputHighlighted, setIsInputHighlighted] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [layout, setLayout] = useState<string[][]>(DEFAULT_ROWS);
+  const [selectedKey, setSelectedKey] = useState<{ row: number; col: number } | null>(null);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [isTranslating, setIsTranslating] = useState(false);
+  const [isToneAdjusting, setIsToneAdjusting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isHighlightMode, setIsHighlightMode] = useState(false);
+  const [isGeneratingImage, setIsGeneratingImage] = useState(false);
+  const [showGenerator, setShowGenerator] = useState(false);
+  const [generatedImage, setGeneratedImage] = useState<string | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [activeMenus, setActiveMenus] = useState({
+  const [selectedTone, setSelectedTone] = useState<string | null>(null);
+  const [translationInput, setTranslationInput] = useState('');
+  const [sourceLang, setSourceLang] = useState('auto');
+  const [targetLang, setTargetLang] = useState('ti');
+  const [isTranslatingRealtime, setIsTranslatingRealtime] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [showLanguagePicker, setShowLanguagePicker] = useState<{ type: 'source' | 'target', open: boolean }>({ type: 'target', open: false });
+  const [langSearch, setLangSearch] = useState('');
+  const [activePhonetic, setActivePhonetic] = useState('');
+  const [cursorIndex, setCursorIndex] = useState(0);
+  const [shortcuts, setShortcuts] = useState<Record<string, string>>(() => {
+  const [newShortcutKey, setNewShortcutKey] = useState('');
+  const [newShortcutValue, setNewShortcutValue] = useState('');
+  const [isCursorMode, setIsCursorMode] = useState(false);
+  const [clipboardItems, setClipboardItems] = useState<string[]>([]);
+  const [pinnedItems, setPinnedItems] = useState<string[]>([]);
+  const [isAiSuggestionsLoading, setIsAiSuggestionsLoading] = useState(false);
+  const [aiSuggestions, setAiSuggestions] = useState<string[]>([]);
+  const [isClipboardOpen, setIsClipboardOpen] = useState(false);
+  const [clipboardActionMenu, setClipboardActionMenu] = useState<{ item: string; isPinned: boolean; x: number; y: number } | null>(null);
+  const [vowelMenu, setVowelMenu] = useState<{ key: string; variations: string[]; x: number; y: number } | null>(null);

@@ -1,4 +1,4 @@
-import { GoogleGenAI, Modality } from "@google/genai";
+import { GoogleGenAI, Modality, LiveServerMessage } from "@google/genai";
 
 let genAI: GoogleGenAI | null = null;
 
@@ -22,7 +22,7 @@ export interface ChatMessage {
 export const startAIChat = (history: ChatMessage[] = [], systemInstruction?: string) => {
   const ai = getAI();
   return ai.chats.create({
-    model: "gemini-3-flash-preview",
+    model: "models/gemini-3-flash-preview",
     config: {
       systemInstruction: systemInstruction || "Role: Act as the Google Gemini Assistant. Provide structured, professional, and clean responses.\n\nVisual Style Rules:\n- Formatting: Use Markdown for all text.\n- Use ### for all section headers.\n- Use **Bold** for key terms.\n- Use * for bulleted lists.\n\nStructure:\n- Begin with a one-sentence Summary.\n- Group related information into distinct sections.\n- Use double line breaks between sections for White Space.\n\nConciseness:\n- Be direct. Do not use conversational filler. Deliver the information organized by headers.\n\nSTRICT Language Matching Rules:\n1. DETECT the exact language the user is speaking (e.g. English, Tigrinya, Amharic).\n2. RESPOND 100% in that SAME language.\n3. NEVER mix languages (No English definitions, no translations, no summaries in a different language) unless explicitly asked to translate.\n\nSource Links:\n- Format links as [Source Name](URL).",
       tools: [{ googleSearch: {} }],
@@ -48,7 +48,7 @@ export const sendMessageStreamToAI = async (chat: any, message: string) => {
 export const generateTTS = async (text: string, voiceName: string = 'Kore'): Promise<string | null> => {
   const ai = getAI();
   const response = await ai.models.generateContent({
-    model: "gemini-3.1-flash-tts-preview",
+    model: "models/gemini-3.1-flash-tts-preview",
     contents: [{ parts: [{ text }] }],
     config: {
       responseModalities: [Modality.AUDIO],
@@ -69,9 +69,37 @@ export const generateTTS = async (text: string, voiceName: string = 'Kore'): Pro
   return null;
 };
 
+/**
+ * GEMINI Multimodal Live API Integration
+ */
+interface LiveCallbacks {
+  onopen: () => void;
+  onclose: () => void;
+  onerror: (error: any) => void;
+  onmessage: (message: LiveServerMessage) => void;
+}
+
+export const connectToLiveAPI = (callbacks: LiveCallbacks, systemInstruction?: string) => {
+  const ai = getAI();
+  
+  return ai.live.connect({
+    model: "models/gemini-3.1-flash-live-preview",
+    callbacks,
+    config: {
+      responseModalities: [Modality.AUDIO],
+      speechConfig: {
+        voiceConfig: { prebuiltVoiceConfig: { voiceName: "Zephyr" } },
+      },
+      systemInstruction: systemInstruction || "You are a helpful assistant. You support English, Tigrinya, and Amharic. Respond in the same language as the user.",
+      // Enable real-time transcription
+      inputAudioTranscription: {},
+      outputAudioTranscription: {},
+    },
+  });
+};
+
 export const generateSuggestions = async (history: ChatMessage[], language: string): Promise<string[]> => {
   const ai = getAI();
-  const model = ai.models.get("gemini-3-flash-preview");
   
   const historyText = history.slice(-5).map(m => `${m.role}: ${m.parts}`).join('\n');
   
@@ -84,14 +112,15 @@ Chat History:
 ${historyText}`;
 
   try {
-    const result = await model.generateContent({
+    const result = await ai.models.generateContent({
+      model: "models/gemini-3-flash-preview",
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
       config: {
         responseMimeType: "application/json"
       }
     });
 
-    const text = result.response.text();
+    const text = result.text || "[]";
     return JSON.parse(text);
   } catch (err) {
     console.error("Failed to generate suggestions:", err);

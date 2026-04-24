@@ -6,6 +6,16 @@
   --font-ethiopic: "Noto Sans Ethiopic", "Kefa", "Ebrima", "Nyala", "Abyssinica SIL", sans-serif;
 }
 
+@layer utilities {
+  .text-fluid-ethiopic {
+    font-size: clamp(0.75rem, 0.65rem + 0.5vw, 1.25rem);
+    line-height: clamp(1.6, 1.4 + 0.5vw, 2);
+  }
+  .text-fluid-heading {
+    font-size: clamp(1.1rem, 0.9rem + 1.2vw, 2.5rem);
+  }
+}
+
 @layer base {
   body {
     margin: 0;
@@ -23,6 +33,13 @@
 }
 
 @layer utilities {
+  @keyframes shimmer {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
+  }
+  .animate-shimmer {
+    animation: shimmer 2s infinite;
+  }
   .custom-scrollbar::-webkit-scrollbar {
     width: 4px;
   }

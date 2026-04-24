@@ -7,14 +7,15 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
 import rehypeRaw from 'rehype-raw';
-import { MessageSquare, MessageSquarePlus, Send, Bot, User, Delete, ChevronUp, Space, CornerDownLeft, Globe, Copy, ClipboardPaste, Trash2, Check, Settings2, RotateCcw, X, Save, Languages, Mic, MicOff, Palette, Smile, Rows, Wand2, Sparkles, Loader2, ArrowLeftRight, Type, ClipboardList, Pin, PinOff, Search, Bold, Italic, Underline, Zap, Plus, Trash, CheckCircle2, Maximize2, CornerDownRight, BrainCircuit, History, Pencil, Volume2, Download, Highlighter } from 'lucide-react';
+import { MessageSquare, MessageSquarePlus, Send, Bot, User, Delete, ChevronUp, Space, CornerDownLeft, Globe, Copy, ClipboardPaste, Trash2, Check, Settings2, RotateCcw, X, Save, Languages, Mic, MicOff, Palette, Smile, Rows, Wand2, Sparkles, Loader2, ArrowLeftRight, Type, ClipboardList, Pin, PinOff, Search, Bold, Italic, Underline, Zap, Plus, Trash, CheckCircle2, Maximize2, Minimize2, CornerDownRight, BrainCircuit, History, Pencil, Volume2, Download, Keyboard, Highlighter, Image } from 'lucide-react';
 import { GEEZ_MAP, VOWEL_MAP, PHONETIC_MAP } from './geezUtils';
-import { startAIChat, sendMessageToAI, sendMessageStreamToAI, generateTTS, generateSuggestions, ChatMessage } from './services/geminiService';
+import { startAIChat, sendMessageToAI, sendMessageStreamToAI, generateTTS, generateSuggestions, ChatMessage, connectToLiveAPI } from './services/geminiService';
 import { GoogleGenAI } from "@google/genai";
-import { LiveAssistant } from './services/liveAssistant';
 import { getAudioContext, playBase64Audio } from './services/audioService';
 import { downloadWav } from './lib/wavUtils';
-import { Headphones, Radio, Mic2, Eye, EyeOff, Camera, Video } from 'lucide-react';
+import { AudioRecorder } from './lib/audioRecorder';
+import { AudioStreamer } from './lib/audioStreamer';
+import { Headphones, Radio, Mic2, Eye, EyeOff, Camera, Video, MessageCircle } from 'lucide-react';
 
 // Predefined Emoji List
 const EMOJIS = ['😀', '😂', '😍', '🥰', '😊', '🤔', '🙌', '👏', '🔥', '✨', '❤️', '🇪🇷', '🇪🇹', '👍', '🙏', '🎉', '🌟', '😎', '😜', '😢', '📍', '✅', '❌', '💯'];
@@ -293,6 +294,37 @@ export default function App() {
   });
   const [activeSessionId, setActiveSessionId] = useState<string>('default');
   
+  const [chatInput, setChatInput] = useState('');
+  const [chatCursorIndex, setChatCursorIndex] = useState(0);
+  const [keyboardTarget, setKeyboardTarget] = useState<'main' | 'chat'>('main');
+  const [voice, setVoice] = useState('en-US-Standard-A');
+  const [speechRate, setSpeechRate] = useState(1);
+  const [attachments, setAttachments] = useState<File[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileUpload = (files: FileList | null) => {
+    if (files && files.length > 0) {
+      const newFiles = Array.from(files);
+      setAttachments(prev => [...prev, ...newFiles]);
+      showToast(`Added ${newFiles.length} file(s) to attachments.`);
+    }
+  };
+
+  // Target-aware setters and getters
+  const isMainTarget = keyboardTarget === 'main';
+  const getTargetText = () => isMainTarget ? text : chatInput;
+  const getTargetIndex = () => isMainTarget ? cursorIndex : chatCursorIndex;
+
+  const updateTargetText = (newVal: string | ((prev: string) => string)) => {
+    if (isMainTarget) setText(newVal);
+    else setChatInput(newVal);
+  };
+
+  const updateTargetIndex = (newVal: number | ((prev: number) => number)) => {
+    if (isMainTarget) setCursorIndex(newVal);
+    else setChatCursorIndex(newVal);
+  };
+  
   useEffect(() => {
     localStorage.setItem('chat_sessions', JSON.stringify(chatSessions));
   }, [chatSessions]);
@@ -307,7 +339,6 @@ export default function App() {
   const [chatSearchQuery, setChatSearchQuery] = useState('');
   const [showChatSearch, setShowChatSearch] = useState(false);
   
-  const [chatInput, setChatInput] = useState('');
   const [interimTranscript, setInterimTranscript] = useState('');
   const [isAssistantTyping, setIsAssistantTyping] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
@@ -343,89 +374,23 @@ export default function App() {
   const [isGeneratingTTS, setIsGeneratingTTS] = useState(false);
   const [audioData, setAudioData] = useState<string | null>(null);
   const [showChat, setShowChat] = useState(false);
-  const [showChatSettingsMenu, setShowChatSettingsMenu] = useState(false);
+  const [chatIsMaximized, setChatIsMaximized] = useState(false);
+  const [showChatKeyboard, setShowChatKeyboard] = useState(false);
   const [chatLanguage, setChatLanguage] = useState(() => localStorage.getItem('chat_language') || 'auto');
-  const [isLiveMode, setIsLiveMode] = useState(false);
-  const [isVisionMode, setIsVisionMode] = useState(false);
-  const [showLiveSettings, setShowLiveSettings] = useState(false);
-  const [liveVoice, setLiveVoice] = useState(() => localStorage.getItem('live_voice') || 'Zephyr');
-  const [liveLanguage, setLiveLanguage] = useState(() => localStorage.getItem('live_language') || 'auto');
-  const [liveTranscript, setLiveTranscript] = useState('');
   const [chatSuggestions, setChatSuggestions] = useState<string[]>([]);
   const [showGroundingPanel, setShowGroundingPanel] = useState(false);
+  const [isLiveMode, setIsLiveMode] = useState(false);
+  const [liveTranscript, setLiveTranscript] = useState('');
+  const [liveResponseTranscript, setLiveResponseTranscript] = useState('');
+  const [isAiSpeaking, setIsAiSpeaking] = useState(false);
+  const liveRecorderRef = useRef<AudioRecorder | null>(null);
+  const liveStreamerRef = useRef<AudioStreamer | null>(null);
+  const liveSessionRef = useRef<any>(null);
+
   const [panelSources, setPanelSources] = useState<{ title: string; uri: string }[]>([]);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const chatSessionRef = useRef<any>(null);
-  const liveAssistantRef = useRef<LiveAssistant | null>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
-
-  useEffect(() => {
-    if (isVisionMode && videoRef.current) {
-      navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } })
-        .then(stream => {
-          if (videoRef.current) {
-            videoRef.current.srcObject = stream;
-            liveAssistantRef.current?.startVision(videoRef.current);
-          }
-        })
-        .catch(err => {
-          console.error("Camera access denied:", err);
-          setIsVisionMode(false);
-          showToast("Camera access failed.");
-        });
-    } else {
-      const stream = videoRef.current?.srcObject as MediaStream;
-      stream?.getTracks().forEach(t => t.stop());
-      if (videoRef.current) videoRef.current.srcObject = null;
-      liveAssistantRef.current?.stopVision();
-    }
-  }, [isVisionMode]);
-
-  useEffect(() => {
-    localStorage.setItem('live_voice', liveVoice);
-  }, [liveVoice]);
-
-  useEffect(() => {
-    localStorage.setItem('live_language', liveLanguage);
-  }, [liveLanguage]);
-
-  useEffect(() => {
-    if (isLiveMode) {
-      if (!liveAssistantRef.current) {
-        liveAssistantRef.current = new LiveAssistant();
-      }
-
-      const instructions: Record<string, string> = {
-        ti: "You are a helpful Tigrinya assistant. You must speak only in Tigrinya.",
-        am: "You are a helpful Amharic assistant. You must speak only in Amharic.",
-        en: "You are a helpful English assistant. You must speak only in English.",
-        auto: "You are a helpful Tigrinya, Amharic and English assistant. Respond in the language the user speaks to you."
-      };
-
-      liveAssistantRef.current.connect(
-        (text) => {
-          setChatMessages(prev => [...prev, { role: 'model', parts: text }]);
-          setLiveTranscript(text);
-        },
-        () => {
-          console.log("Interrupted");
-        },
-        (err) => {
-          console.error("Live Assistant Error:", err);
-          setIsLiveMode(false);
-          showToast("Microphone access or connection failed.");
-        },
-        { 
-          voiceName: liveVoice,
-          systemInstruction: instructions[liveLanguage] || instructions.auto
-        }
-      );
-    } else {
-      liveAssistantRef.current?.disconnect();
-    }
-    return () => liveAssistantRef.current?.disconnect();
-  }, [isLiveMode, liveVoice, liveLanguage]);
 
   const [masterScale, setMasterScale] = useState<number>(() => {
     const saved = localStorage.getItem('master_scale');
@@ -439,7 +404,7 @@ export default function App() {
   const [toolbarOrder, setToolbarOrder] = useState<string[]>(() => {
     const saved = localStorage.getItem('toolbar_order');
     // Removed 'mic' from default to avoid redundancy with the bottom row
-    return saved ? JSON.parse(saved) : ['ai', 'chat', 'paste', 'toggle_translation', 'read_aloud', 'download_audio', 'highlight', 'generator', 'globe', 'translate', 'clipboard', 'settings'];
+    return saved ? JSON.parse(saved) : ['ai', 'chat', 'paste', 'toggle_translation', 'read_aloud', 'download_audio', 'highlight', 'generator', 'globe', 'translate', 'clipboard'];
   });
   const [hiddenTools, setHiddenTools] = useState<string[]>(() => {
     const saved = localStorage.getItem('hidden_tools');
@@ -499,11 +464,10 @@ export default function App() {
     translationBar: false,
     format: false,
     shortcuts: false,
-    gif: false,
     clipboard: false,
     export: false,
     region: false,
-    settings: false,
+    history: false,
   });
   const [selectedTone, setSelectedTone] = useState<string | null>(null);
 
@@ -567,8 +531,6 @@ export default function App() {
           return <ArrowLeftRight className="w-5 h-5"/>;
         case 'clipboard':
           return <ClipboardList className="w-5 h-5"/>;
-        case 'settings':
-          return <Settings2 className="w-5 h-5"/>;
         case 'mic':
           return <Mic className={`w-5 h-5 ${isListening ? 'text-rose-400' : ''}`}/>;
         case 'paste':
@@ -622,7 +584,6 @@ export default function App() {
           else if (toolId === 'globe') cycleLanguage();
           else if (toolId === 'translate') toggleMenu('region');
           else if (toolId === 'clipboard') toggleMenu('clipboard');
-          else if (toolId === 'settings') toggleMenu('settings');
           else if (toolId === 'mic') toggleListening();
           else if (toolId === 'paste') handlePaste();
           else if (toolId === 'toggle_translation') toggleMenu('translationBar');
@@ -632,11 +593,11 @@ export default function App() {
           else if (toolId === 'generator') setShowGenerator(true);
         }} 
         // Proportional Touch Target Width (approx 8.5% of toolbar)
-        className={`w-[8.5%] h-full flex items-center justify-center text-white/90 hover:bg-white/10 rounded-[1vh] transition-all shrink-0 ${
-          (toolId === 'toggle_translation' && activeMenus.translationBar) ? 'bg-blue-500/20 text-blue-400': ''
+        className={`w-[8.5%] h-full flex items-center justify-center text-white/90 transition-all shrink-0 ${
+          (toolId === 'toggle_translation' && activeMenus.translationBar) ? 'text-blue-400': ''
         } ${((toolId === 'read_aloud' || toolId === 'download_audio') && isGeneratingTTS) ? 'animate-pulse opacity-50': ''} ${
-          (toolId === 'highlight' && isHighlightMode) ? 'bg-yellow-500/20 text-yellow-500': ''
-        }`}
+          (toolId === 'highlight' && isHighlightMode) ? 'text-yellow-500': ''
+        } hover:text-white hover:scale-110 active:scale-95`}
       >
         <div style={{ width: 'min(5vw, 24px)', height: 'min(5vw, 24px)' }}>
           {toolContent}
@@ -646,10 +607,331 @@ export default function App() {
   };
 
   const factoryReset = () => {
-    if (confirm("Factory Reset: This will wipe ALL your custom themes, sizes, and toolbar layouts. Proceed?")) {
-      localStorage.clear();
-      window.location.reload();
-    }
+    localStorage.clear();
+    window.location.reload();
+  };
+
+  const renderKeyboardUI = (isChat: boolean = false) => {
+    return (
+      <div 
+        className={`mx-auto w-full max-w-screen-lg flex flex-col gap-[1%] transition-all relative shrink-0 p-1.5 sm:p-2 pb-[env(safe-area-inset-bottom)] ${isEditing ? 'scale-[1.01]' : ''} ${isChat ? 'h-auto max-h-[40vh]' : ''}`}
+        style={{ height: isChat ? 'auto' : `${keyboardSize}vh`, maxHeight: isChat ? '40vh' : '50vh' }}
+        onMouseDown={() => setKeyboardTarget(isChat ? 'chat' : 'main')}
+      >
+        {/* Clipboard Overlay */}
+        <AnimatePresence>
+          {activeMenus.clipboard && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className={`absolute inset-0 z-[120] rounded-3xl p-4 flex flex-col gap-4 overflow-hidden backdrop-blur-3xl border border-white/20 ${currentTheme.isDark ? 'bg-black/80' : 'bg-white/80'}`}
+            >
+              <div className="flex justify-between items-center shrink-0">
+                <div className="flex items-center gap-2">
+                  <ClipboardList className={`w-4 h-4 ${currentTheme.isDark ? 'text-orange-400' : 'text-orange-600'}`} />
+                  <span className={`text-[10px] uppercase tracking-widest font-bold ${currentTheme.isDark ? 'text-white/60' : 'text-black/60'}`}>Smart Clipboard</span>
+                </div>
+                <button onClick={clearClipboard} className={`text-[10px] px-2 py-1 rounded-lg ${currentTheme.isDark ? 'bg-white/10 hover:bg-white/20' : 'bg-black/10 hover:bg-black/20'}`}>Clear All</button>
+                <button onClick={() => toggleMenu('clipboard')} className="p-1.5 hover:bg-white/10 rounded-full transition-colors">
+                  <X className="w-4 h-4 opacity-50" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-6 pr-1">
+                {/* Pinned Section */}
+                {(pinnedItems.length > 0 || isEditing) && (
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-2 opacity-40 px-1">
+                      <Pin className="w-3 h-3" />
+                      <span className="text-[9px] uppercase tracking-wider font-mono">Pinned Items</span>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {pinnedItems.map((item, i) => (
+                        <motion.button
+                          key={`pinned-${i}`}
+                          onClick={() => { 
+                            const curIndex = getTargetIndex();
+                            updateTargetText(prev => prev.slice(0, curIndex) + item + prev.slice(curIndex)); 
+                            updateTargetIndex((p: number) => p + item.length);
+                            setIsClipboardOpen(false); 
+                            toggleMenu('clipboard');
+                          }}
+                          onContextMenu={(e) => handleClipboardLongPress(item, true, e)}
+                          className={`px-3 py-2 rounded-xl text-xs flex items-center gap-2 border transition-all active:scale-95 ${currentTheme.isDark ? 'bg-orange-500/10 border-orange-500/20 text-orange-100 hover:bg-orange-500/20' : 'bg-orange-50/50 border-orange-200 text-orange-900 hover:bg-orange-100'}`}
+                        >
+                          <span className="truncate max-w-[120px] font-ethiopic">{item}</span>
+                        </motion.button>
+                      ))}
+                      {pinnedItems.length === 0 && <span className="p-4 text-[10px] opacity-20 italic">No pinned items yet...</span>}
+                    </div>
+                  </div>
+                )}
+
+                {/* Recents Section */}
+                <div className="flex flex-col gap-2 pb-4">
+                  <div className="flex items-center gap-2 opacity-40 px-1">
+                    <RotateCcw className="w-3 h-3" />
+                    <span className="text-[9px] uppercase tracking-wider font-mono">Recent History</span>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {clipboardItems.map((item, i) => (
+                      <motion.button
+                        key={`recent-${i}`}
+                        onClick={() => { 
+                          const curIndex = getTargetIndex();
+                          updateTargetText(prev => prev.slice(0, curIndex) + item + prev.slice(curIndex)); 
+                          updateTargetIndex((p: number) => p + item.length);
+                          setIsClipboardOpen(false); 
+                          toggleMenu('clipboard');
+                        }}
+                        onContextMenu={(e) => handleClipboardLongPress(item, false, e)}
+                        className={`px-3 py-2 rounded-xl text-xs flex items-center gap-2 border transition-all active:scale-95 ${currentTheme.isDark ? 'bg-white/5 border-white/10 text-white/80 hover:bg-white/10' : 'bg-black/5 border-black/10 text-black/80 hover:bg-black/10'}`}
+                      >
+                        <span className="truncate max-w-[120px] font-ethiopic">{item}</span>
+                      </motion.button>
+                    ))}
+                    {clipboardItems.length === 0 && <span className="p-4 text-[10px] opacity-20 italic">History is empty...</span>}
+                  </div>
+                </div>
+              </div>
+
+              {/* Clipboard Action Menu */}
+              <AnimatePresence>
+                {clipboardActionMenu && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.9, y: 10 }}
+                    animate={{ opacity: 1, scale: 1, y: -10 }}
+                    exit={{ opacity: 0, scale: 0.9, y: 10 }}
+                    className="absolute z-[130] bg-white/10 backdrop-blur-3xl border border-white/20 p-1.5 rounded-2xl shadow-2xl flex gap-1"
+                    style={{ left: Math.min(window.innerWidth - 150, clipboardActionMenu.x - 70), top: clipboardActionMenu.y - 60 }}
+                  >
+                    <button 
+                      onClick={() => { togglePin(clipboardActionMenu.item); setClipboardActionMenu(null); }}
+                      className="p-2 hover:bg-white/10 rounded-xl transition-all"
+                      title={clipboardActionMenu.isPinned ? "Unpin" : "Pin"}
+                    >
+                      {clipboardActionMenu.isPinned ? <PinOff className="w-4 h-4 text-orange-400" /> : <Pin className="w-4 h-4 text-white/60" />}
+                    </button>
+                    <button 
+                      onClick={() => deleteClipboardItem(clipboardActionMenu.item, clipboardActionMenu.isPinned)}
+                      className="p-2 hover:bg-red-500/20 rounded-xl transition-all"
+                      title="Delete"
+                    >
+                      <Trash2 className="w-4 h-4 text-red-400" />
+                    </button>
+                    <button 
+                      onClick={() => setClipboardActionMenu(null)}
+                      className="p-2 hover:bg-white/10 rounded-xl transition-all"
+                      title="Cancel"
+                    >
+                      <X className="w-4 h-4 opacity-50" />
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Symbol Overlay Indicator */}
+        {isSymbols && (
+          <div className="absolute -top-5 sm:-top-6 left-4 text-[9px] sm:text-[10px] uppercase tracking-widest text-white/30 font-mono">
+            Symbols & Numbers
+          </div>
+        )}
+
+        {/* Vowel Menu Popup */}
+        <AnimatePresence>
+          {vowelMenu && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: -8 }}
+              exit={{ opacity: 0, y: 10 }}
+              className="absolute left-0 bottom-full w-full z-[110] bg-white/10 backdrop-blur-3xl border-t border-white/10 p-2 flex justify-center gap-3 shadow-[0_-10px_30px_rgba(0,0,0,0.3)]"
+            >
+              {vowelMenu.variations.map((v, i) => (
+                <button
+                  key={i}
+                  onClick={() => selectVariation(v)}
+                  className="w-12 h-16 sm:w-14 sm:h-18 bg-white/10 hover:bg-white/30 rounded-xl flex items-center justify-center text-2xl sm:text-3xl ethiopic-font border border-white/20 transition-all hover:scale-110 active:scale-90 shrink-0 shadow-lg text-white"
+                >
+                  {v}
+                </button>
+              ))}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence>
+          {activeMenus.emoji && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: -20 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="absolute left-1/2 -translate-x-1/2 z-[100] w-full max-w-[400px] bg-white/10 backdrop-blur-3xl border border-white/20 p-4 rounded-3xl shadow-[0_20px_60px_rgba(0,0,0,0.6)]"
+              style={{ top: -160 }}
+            >
+              <div className="flex justify-between items-center mb-3 px-1">
+                <span className="text-[10px] uppercase tracking-widest text-white/40 font-mono">Frequently Used</span>
+                <button onClick={() => toggleMenu('emoji')} aria-label="Close Emoji Menu" className="p-1 hover:bg-white/10 rounded-full transition-colors">
+                  <X className="w-3 h-3 text-white/60" />
+                </button>
+              </div>
+              <div className="grid grid-cols-6 gap-2">
+                {EMOJIS.map((emoji, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => {
+                      const curIdx = getTargetIndex();
+                      updateTargetText(prev => prev.slice(0, curIdx) + emoji + prev.slice(curIdx));
+                      updateTargetIndex((p: number) => p + emoji.length);
+                      toggleMenu('emoji');
+                    }}
+                    aria-label={`Insert Emoji: ${emoji}`}
+                    className="w-full aspect-square flex items-center justify-center text-2xl hover:bg-white/10 rounded-xl transition-all hover:scale-110 active:scale-95"
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {(isSymbols ? SYMBOL_ROWS : layout).map((row, rowIndex) => (
+          <div key={rowIndex} className="flex justify-center gap-1 flex-1 items-stretch w-full">
+            {row.map((key, colIndex) => {
+              const isSpecial = ['shift', 'backspace', 'globe', 'space', 'enter', '123', 'mic', 'emoji', 'ABC'].includes(key);
+              const isPressed = activeKey === key;
+              const isSelected = selectedKey?.row === rowIndex && selectedKey?.col === colIndex;
+              const currentLabel = isShift ? key.toUpperCase() : key.toLowerCase();
+              const displayChar = (activeLanguage === 'english' || isSymbols) ? currentLabel : (GEEZ_MAP[key.toUpperCase()]?.[0] || key);
+
+              return (
+                <motion.button
+                  key={`${rowIndex}-${colIndex}-${key}`}
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.95, backgroundColor: 'rgba(255,255,255,0.2)' }}
+                  onMouseDown={(e) => { 
+                    if (key === 'space') handleSpaceSwipeStart(e);
+                    else handleKeyPress(key, rowIndex, colIndex);
+                    if (!isSpecial) startLongPress(key, e);
+                  }}
+                  onMouseMove={(e) => {
+                    if (key === 'space') handleSpaceSwipeMove(e);
+                  }}
+                  onMouseUp={() => {
+                    if (key === 'space') handleSpaceSwipeEnd();
+                    cancelLongPress();
+                  }}
+                  onMouseLeave={() => {
+                    if (key === 'space') handleSpaceSwipeEnd();
+                    cancelLongPress();
+                  }}
+                  onTouchStart={(e) => {
+                    e.preventDefault();
+                    if (key === 'space') handleSpaceSwipeStart(e);
+                    else handleKeyPress(key, rowIndex, colIndex);
+                    if (!isSpecial) startLongPress(key, e);
+                  }}
+                  onTouchMove={(e) => {
+                    if (key === 'space') handleSpaceSwipeMove(e);
+                  }}
+                  onTouchEnd={() => {
+                    if (key === 'space') handleSpaceSwipeEnd();
+                    cancelLongPress();
+                  }}
+                  aria-label={`Keyboard key ${key}`}
+                  className={`
+                    relative rounded-lg sm:rounded-xl flex flex-col items-center justify-center transition-all cursor-pointer font-ethiopic
+                    ${isPressed ? 'z-50 ring-2 ring-blue-400 scale-[1.05]' : 'z-10'}
+                    ${isSpecial ? (currentTheme.isDark ? 'bg-white/[0.03] text-white/70' : 'bg-black/[0.03] text-black/60') : (currentTheme.isDark ? 'bg-white/[0.12] border-white/[0.15] text-white' : 'bg-white border-black/[0.05] text-slate-800 shadow-sm')}
+                    backdrop-blur-[12px] border px-1 text-[clamp(14px,4vw,24px)]
+                    ${isSpecial ? 'text-[clamp(0.6rem,2vw,0.8rem)] uppercase tracking-tight' : ''}
+                    ${key === 'space' ? (isCursorMode ? '!bg-blue-400 !text-white' : activeLanguage === 'tigrinya' ? '!bg-[#059669] !text-white border-green-700/50' : activeLanguage === 'amharic' ? '!bg-[#059669] !text-white border-green-700/50' : (currentTheme.isDark ? '!bg-white !text-black' : '!bg-slate-800 !text-white')) + ' flex-[4] tracking-widest min-w-0 transition-colors' : (['enter', 'shift', 'backspace', '123', 'ABC'].includes(key) ? 'flex-[1.5]' : 'flex-1')}
+                    ${key === 'globe' ? (activeLanguage === 'tigrinya' ? 'text-green-400' : activeLanguage === 'amharic' ? 'text-amber-400' : currentTheme.accentText) : ''}
+                    ${key === 'mic' && isListening ? 'text-rose-400 bg-rose-500/20 animate-pulse border-rose-500/30' : ''}
+                    ${key === 'enter' ? `${currentTheme.accentBg} ${currentTheme.accentText} font-bold border ${currentTheme.accentBorder}` : ''}
+                    ${key === 'shift' && isShift ? `${currentTheme.accentBg} ${currentTheme.accentText} border ${currentTheme.accentBorder}` : ''}
+                    ${isEditing ? (currentTheme.isDark ? 'border-dashed border-white/20' : 'border-dashed border-black/20') : (currentTheme.isDark ? 'hover:bg-white/[0.12]' : 'hover:bg-black/[0.05]')}
+                    ${isSelected ? `${currentTheme.accentBg} border-solid scale-105 z-20 shadow-lg` : ''}
+                  `}
+                >
+                  <AnimatePresence>
+                    {isPressed && !isSpecial && !isEditing && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 0, scale: 0.5 }}
+                        animate={{ opacity: 1, y: -60, scale: 1.5 }}
+                        exit={{ opacity: 0, y: -80, scale: 1.2 }}
+                        className="absolute z-50 bg-white/20 backdrop-blur-3xl text-white p-4 rounded-2xl font-bold text-3xl border border-white/30 shadow-2xl pointer-events-none"
+                      >
+                        {displayChar}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                {/* Key Content */}
+                  <span className="relative z-10 flex flex-col items-center justify-center w-full h-full">
+                    {key === 'shift' && <ChevronUp className="w-5 h-5 sm:w-6 sm:h-6 opacity-90" />}
+                    {key === 'backspace' && <Delete className="w-5 h-5 sm:w-6 sm:h-6 opacity-90" />}
+                    {key === 'mic' && (isListening ? <MicOff className="w-5 h-5 sm:w-6 sm:h-6 text-rose-500" /> : <Mic className="w-5 h-5 sm:w-6 sm:h-6 opacity-90" />)}
+                    {key === 'emoji' && <Smile className="w-5 h-5 sm:w-6 sm:h-6 opacity-90" />}
+                    {key === 'globe' && (
+                      activeLanguage === 'english' ? <Languages className="w-5 h-5 sm:w-6 sm:h-6 opacity-70 text-blue-400" /> : 
+                      activeLanguage === 'amharic' ? <Globe className="w-5 h-5 sm:w-6 sm:h-6 text-amber-500" /> : 
+                      <Globe className="w-5 h-5 sm:w-6 sm:h-6 text-emerald-500" />
+                    )}
+                    {key === 'space' && <span className={`text-[10px] sm:text-xs font-bold uppercase tracking-widest ${
+                      activeLanguage === 'english' ? 'text-blue-200' : 
+                      activeLanguage === 'amharic' ? 'text-amber-200' : 'text-emerald-200'
+                    }`}>
+                      {isCursorMode ? 'CURSOR' : (activeLanguage === 'english' ? 'English' : activeLanguage === 'amharic' ? 'Amharic' : 'Tigrinya')}
+                    </span>}
+                    {key === 'enter' && <CornerDownLeft className="w-5 h-5 sm:w-6 sm:h-6" />}
+                    {key === '123' && <span className="font-bold text-xs sm:text-sm">123</span>}
+                    {key === 'ABC' && <span className="font-bold text-xs sm:text-sm">ABC</span>}
+                    
+                    {!isSpecial && (
+                      <>
+                        {GEEZ_MAP[key.toUpperCase()] && activeLanguage !== 'english' && !isSymbols && (
+                          <span 
+                            className="absolute top-1 right-1.5 text-[8px] sm:text-[10px] text-white/20 font-ethiopic"
+                            style={{ fontSize: `${8 * (keyScale/100)}px` }}
+                          >
+                            {key.toLowerCase()}
+                          </span>
+                        )}
+                        {EN_LABELS[key.toUpperCase()] && activeLanguage !== 'english' && !isSymbols && (
+                          <span 
+                            className="absolute top-1 left-1.5 text-[7px] sm:text-[9px] text-white/40 font-sans font-bold"
+                            style={{ fontSize: `${7 * (keyScale/100)}px` }}
+                          >
+                            {EN_LABELS[key.toUpperCase()].toLowerCase()}
+                          </span>
+                        )}
+                        <span 
+                          className={`text-center leading-none px-[2%] break-words overflow-hidden flex items-center justify-center h-full w-full ${
+                            activeLanguage === 'english' ? 'text-blue-100' : 
+                            activeLanguage === 'amharic' ? 'text-amber-100' : 'text-emerald-100'
+                          }`}
+                          style={{ 
+                            // Fully Dynamic Font: Scales by viewport width but stays within key boundaries
+                            fontSize: `clamp(10px, ${3.5 * (keyScale / 100)}vw, 28px)`,
+                          }}
+                        >
+                          {displayChar}
+                        </span>
+                      </>
+                    )}
+                  </span>
+                </motion.button>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+    );
   };
 
   useEffect(() => {
@@ -750,6 +1032,179 @@ export default function App() {
     }
   };
 
+  const startNewChatSession = () => {
+    const newId = Date.now().toString();
+    const newTitle = `New Chat ${chatSessions.length + 1}`;
+    setChatSessions(prev => [...prev, { id: newId, title: newTitle, messages: [] }]);
+    setActiveSessionId(newId);
+    setChatInput('');
+    if (isLiveMode) stopLiveSession();
+  };
+
+  const stopLiveSession = useCallback(() => {
+    setIsLiveMode(false);
+
+    // Save final messages to history if they exist
+    setLiveTranscript((userText) => {
+        setLiveResponseTranscript((modelText) => {
+            if (userText.trim() || modelText.trim()) {
+                const newMessages: ChatMessage[] = [];
+                if (userText.trim()) newMessages.push({ role: 'user', parts: userText });
+                if (modelText.trim()) newMessages.push({ role: 'model', parts: modelText });
+                
+                if (newMessages.length > 0) {
+                    setChatMessages(prev => [...prev, ...newMessages]);
+                }
+            }
+            return '';
+        });
+        return '';
+    });
+
+    liveSessionRef.current?.close();
+    liveRecorderRef.current?.stop();
+    liveStreamerRef.current?.stop();
+    liveSessionRef.current = null;
+    liveRecorderRef.current = null;
+    liveStreamerRef.current = null;
+    setIsAiSpeaking(false);
+  }, [setChatMessages]);
+
+  const startLiveSession = useCallback(async () => {
+    if (isLiveMode) return;
+    
+    // Ensure shared audio context is resumed
+    const ctx = getAudioContext();
+    if (ctx.state === 'suspended') {
+        await ctx.resume();
+    }
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        showToast("Your browser does not support voice input.");
+        return;
+    }
+
+    try {
+        // Init Recorder and get Mic permission IMMEDIATELY (during user gesture)
+        const recorder = new AudioRecorder((base64) => {
+            if (liveSessionRef.current && typeof (liveSessionRef.current as any).sendRealtimeInput === 'function') {
+                liveSessionRef.current.sendRealtimeInput({ audio: { data: base64, mimeType: 'audio/pcm;rate=16000' } });
+            }
+        });
+        
+        await recorder.start(); // This triggers the browser prompt
+        liveRecorderRef.current = recorder;
+
+        setIsLiveMode(true);
+        setLiveTranscript('');
+        setLiveResponseTranscript('');
+        setIsAiSpeaking(false);
+
+        liveStreamerRef.current = new AudioStreamer();
+
+        const callbacks = {
+            onopen: () => {
+                showToast("Live Talk Connected");
+            },
+            onclose: () => {
+                stopLiveSession();
+                showToast("Live Talk Ended");
+            },
+            onerror: (err: any) => {
+                console.error("Live Error:", err);
+                stopLiveSession();
+                showToast("Check your connection");
+            },
+            onmessage: (message: any) => {
+                // 1. Audio Output (AI Voice)
+                const base64Audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
+                if (base64Audio) {
+                    setIsAiSpeaking(true);
+                    liveStreamerRef.current?.play(base64Audio);
+                }
+
+                // 2. USER Transcription (Real-time & Final)
+                const incomingUserText = 
+                    message.serverContent?.userTurn?.parts?.[0]?.text || 
+                    message.transcription?.transcription ||
+                    message.inputAudioTranscription?.text;
+
+                if (incomingUserText) {
+                    setIsAiSpeaking(false);
+                    setLiveTranscript(incomingUserText);
+                }
+
+                // 3. MODEL Transcription (Real-time & Final)
+                const incomingModelText = 
+                    message.serverContent?.modelTurn?.parts?.[0]?.text ||
+                    message.outputAudioTranscription?.text;
+
+                if (incomingModelText) {
+                    setIsAiSpeaking(true);
+                    setLiveResponseTranscript(prev => prev + incomingModelText);
+                }
+
+                // 4. Interruption
+                if (message.serverContent?.interrupted) {
+                    liveStreamerRef.current?.stop();
+                    setIsAiSpeaking(false);
+                    setLiveResponseTranscript(prev => prev + " [Interrupted]");
+                }
+                
+                // 5. TURN COMPLETE (Save to History)
+                if (message.serverContent?.turnComplete) {
+                    // Small delay to ensure all packets are processed
+                    setTimeout(() => {
+                        setIsAiSpeaking(false);
+                        setLiveTranscript(u => {
+                            setLiveResponseTranscript(m => {
+                                const trimmedU = u.trim();
+                                const trimmedM = m.trim();
+                                if (trimmedU || trimmedM) {
+                                    setChatMessages(prev => {
+                                        const next = [...prev];
+                                        if (trimmedU) next.push({ role: 'user', parts: trimmedU });
+                                        if (trimmedM) next.push({ role: 'model', parts: trimmedM });
+                                        return next;
+                                    });
+                                }
+                                return ''; 
+                            });
+                            return '';
+                        });
+                    }, 400);
+                }
+            }
+        };
+
+        const instructions = `You are a real-time 'Live Talk' assistant. 
+1. Support English, Tigrinya, and Amharic. 
+2. Match the user's language EXACTLY. 
+3. Be concise and natural. 
+4. Your speech is being transcribed to the user's screen.
+5. If interrupted, stop immediately.`;
+        
+        // connectToLiveAPI returns a Promise<LiveSession>
+        const session = await connectToLiveAPI(callbacks, instructions);
+        liveSessionRef.current = session;
+
+    } catch (err: any) {
+        console.error("Session Start Failed:", err);
+        const isMicError = err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError' || err.message?.includes('Permission denied');
+        if (isMicError) {
+          showToast("Microphone access is required. Please check your browser settings.");
+        } else {
+          showToast("Failed to start Live Talk. Try again.");
+        }
+        stopLiveSession();
+    }
+  }, [isLiveMode, stopLiveSession]);
+
+  const toggleLiveMode = () => {
+    if (isLiveMode) stopLiveSession();
+    else startLiveSession();
+  };
+
   const handleSendChatMessage = async () => {
     if (!chatInput.trim() || isAssistantTyping) return;
     setChatSuggestions([]);
@@ -782,8 +1237,14 @@ export default function App() {
   }, [cursorIndex]);
 
   const [shortcuts, setShortcuts] = useState<Record<string, string>>(() => {
-    const saved = localStorage.getItem('keyboard_shortcuts');
-    return saved ? JSON.parse(saved) : { 'adr': 'Addis Ababa, Eritrea' };
+    try {
+      const saved = localStorage.getItem('keyboard_shortcuts');
+      if (!saved || saved === 'null' || saved === 'undefined') return { 'adr': 'Addis Ababa' };
+      const parsed = JSON.parse(saved);
+      return (parsed && typeof parsed === 'object') ? parsed : { 'adr': 'Addis Ababa' };
+    } catch {
+      return { 'adr': 'Addis Ababa' };
+    }
   });
   const [newShortcutKey, setNewShortcutKey] = useState('');
 
@@ -802,7 +1263,9 @@ export default function App() {
   }, [text]);
 
   const getExpandedInfo = useCallback(() => {
-    const textBeforeCursor = text.slice(0, cursorIndex);
+    const curText = getTargetText();
+    const curIndex = getTargetIndex();
+    const textBeforeCursor = curText.slice(0, curIndex);
     const lastWordMatch = textBeforeCursor.match(/(\S+)$/);
     
     if (lastWordMatch) {
@@ -810,13 +1273,13 @@ export default function App() {
       const expansion = shortcuts[lastWord.toLowerCase()];
       
       if (expansion) {
-        const newText = text.slice(0, cursorIndex - lastWord.length) + expansion + text.slice(cursorIndex);
-        const newCursorIndex = cursorIndex - lastWord.length + expansion.length;
+        const newText = curText.slice(0, curIndex - lastWord.length) + expansion + curText.slice(curIndex);
+        const newCursorIndex = curIndex - lastWord.length + expansion.length;
         return { newText, newCursorIndex };
       }
     }
     return null;
-  }, [text, cursorIndex, shortcuts]);
+  }, [text, cursorIndex, chatInput, chatCursorIndex, shortcuts, keyboardTarget]);
 
   const [clipboardItems, setClipboardItems] = useState<string[]>([]);
   const [pinnedItems, setPinnedItems] = useState<string[]>([]);
@@ -1002,7 +1465,7 @@ export default function App() {
     }
 
     // Real-time dictionary lookup in Tigrinya
-    const allWords = Object.values(TIGRINYA_DICTIONARY).flat();
+    const allWords = Object.values(TIGRINYA_DICTIONARY || {}).flat();
     const matches = Array.from(new Set(allWords.filter(w => w.startsWith(lastWord) && w !== lastWord)));
 
     let foundSuggestions = [];
@@ -1276,10 +1739,10 @@ export default function App() {
     // Check for Vowel Modification (Last character change)
     if (vowelIdx !== undefined && currentIndex > 0) {
       const lastChar = currentText[currentIndex - 1];
-      for (const forms of Object.values(GEEZ_MAP)) {
+      for (const forms of Object.values(GEEZ_MAP || {})) {
         if (forms[0] === lastChar || forms[5] === lastChar) {
           const newChar = forms[vowelIdx];
-          setText((prev) => prev.slice(0, currentIndex - 1) + newChar + prev.slice(currentIndex));
+          updateTargetText((prev) => prev.slice(0, currentIndex - 1) + newChar + prev.slice(currentIndex));
           return true; // Successfully modified previous char
         }
       }
@@ -1296,8 +1759,8 @@ export default function App() {
       finalChar = phoneticBase;
     }
 
-    setText((prev) => prev.slice(0, currentIndex) + finalChar + prev.slice(currentIndex));
-    setCursorIndex(currentIndex + 1);
+    updateTargetText((prev) => prev.slice(0, currentIndex) + finalChar + prev.slice(currentIndex));
+    updateTargetIndex(currentIndex + 1);
     return false;
   };
 
@@ -1314,33 +1777,40 @@ export default function App() {
     setActiveKey(key);
     setTimeout(() => setActiveKey(null), 100);
 
+    const currentTargetText = getTargetText();
+    const currentTargetIndex = getTargetIndex();
+
     // 1. NON-CHARACTER KEYS
     if (key === 'backspace') {
-      if (cursorIndex > 0) {
-        setText((prev) => prev.slice(0, cursorIndex - 1) + prev.slice(cursorIndex));
-        setCursorIndex(prev => prev - 1);
+      if (currentTargetIndex > 0) {
+        updateTargetText((prev) => prev.slice(0, currentTargetIndex - 1) + prev.slice(currentTargetIndex));
+        updateTargetIndex(prev => prev - 1);
       }
       return;
     }
 
     if (key === 'space') {
       const expanded = getExpandedInfo();
-      const txt = expanded ? expanded.newText : text;
-      const idx = expanded ? expanded.newCursorIndex : cursorIndex;
-      setText(txt.slice(0, idx) + ' ' + txt.slice(idx));
-      setCursorIndex(idx + 1);
+      const txt = expanded ? expanded.newText : currentTargetText;
+      const idx = expanded ? expanded.newCursorIndex : currentTargetIndex;
+      updateTargetText(txt.slice(0, idx) + ' ' + txt.slice(idx));
+      updateTargetIndex(idx + 1);
       setSuggestions([]);
       return;
     }
 
-    if (key === 'mic') { toggleListening(); return; }
+    if (key === 'mic') { toggleListening(keyboardTarget === 'chat' ? 'chat' : 'main'); return; }
     if (key === 'emoji') { toggleMenu('emoji'); return; }
     if (key === 'enter') {
+      if (keyboardTarget === 'chat') {
+        handleSendChatMessage();
+        return;
+      }
       const expanded = getExpandedInfo();
-      const txt = expanded ? expanded.newText : text;
-      const idx = expanded ? expanded.newCursorIndex : cursorIndex;
-      setText(txt.slice(0, idx) + '\n' + txt.slice(idx));
-      setCursorIndex(idx + 1);
+      const txt = expanded ? expanded.newText : currentTargetText;
+      const idx = expanded ? expanded.newCursorIndex : currentTargetIndex;
+      updateTargetText(txt.slice(0, idx) + '\n' + txt.slice(idx));
+      updateTargetIndex(idx + 1);
       return;
     }
     if (key === 'shift') { setIsShift(!isShift); return; }
@@ -1358,11 +1828,11 @@ export default function App() {
     if (activeLanguage === 'english' || isSymbols) {
       // --- BYPASS MODE ---
       const char = isShift ? key.toUpperCase() : key;
-      setText(prev => prev.slice(0, cursorIndex) + char + prev.slice(cursorIndex));
-      setCursorIndex(prev => prev + 1);
+      updateTargetText(prev => prev.slice(0, currentTargetIndex) + char + prev.slice(currentTargetIndex));
+      updateTargetIndex(prev => prev + 1);
     } else {
       // --- TRANSLITERATION MODE ---
-      processGeezLogic(key, text, cursorIndex);
+      processGeezLogic(key, currentTargetText, currentTargetIndex);
     }
 
     if (isShift) setIsShift(false);
@@ -1395,8 +1865,9 @@ export default function App() {
   };
 
   const selectVariation = (variation: string) => {
-    setText((prev) => prev.slice(0, cursorIndex) + variation + prev.slice(cursorIndex));
-    setCursorIndex(prev => prev + variation.length);
+    const curIndex = getTargetIndex();
+    updateTargetText((prev) => prev.slice(0, curIndex) + variation + prev.slice(curIndex));
+    updateTargetIndex((prev: number) => prev + variation.length);
     setVowelMenu(null);
   };
 
@@ -1407,10 +1878,9 @@ export default function App() {
   };
 
   const resetLayout = () => {
-    if (confirm('Reset to default layout?')) {
-      setLayout(DEFAULT_ROWS);
-      localStorage.removeItem('geez_keyboard_layout');
-    }
+    setLayout(DEFAULT_ROWS);
+    localStorage.removeItem('geez_keyboard_layout');
+    showToast('Layout reset to default');
   };
 
   // Define lastWord for suggestion rendering
@@ -1559,17 +2029,19 @@ export default function App() {
   };
 
   const clearText = () => {
-    if (confirm('Clear all text?')) setText('');
+    setText('');
+    showToast('Text cleared');
   };
 
   const applySuggestion = (suggestion: string) => {
-    setText(prev => {
-      const before = prev.slice(0, cursorIndex);
-      const after = prev.slice(cursorIndex);
+    const curIndex = getTargetIndex();
+    updateTargetText(prev => {
+      const before = prev.slice(0, curIndex);
+      const after = prev.slice(curIndex);
       const wordsBefore = before.trim().split(/\s+/);
       wordsBefore[wordsBefore.length - 1] = suggestion;
       const newBefore = wordsBefore.join(' ') + ' ';
-      setCursorIndex(newBefore.length);
+      updateTargetIndex(newBefore.length);
       return newBefore + after;
     });
     setSuggestions([]);
@@ -1723,7 +2195,7 @@ export default function App() {
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: masterScale }}
         style={{ transformOrigin: 'center center' }}
-        className={`relative z-10 w-full h-[100dvh] md:h-[95vh] lg:max-w-[1200px] xl:max-w-[1400px] flex flex-col md:rounded-[2.5rem] overflow-hidden transition-all duration-500 shadow-2xl ${currentTheme.isDark ? 'text-white' : 'text-slate-900'}`}
+        className={`relative z-10 w-full sm:w-[98%] max-w-screen-2xl h-svh sm:h-[98vh] flex flex-col rounded-none sm:rounded-[2.5rem] overflow-hidden transition-all duration-500 shadow-2xl mx-auto ${currentTheme.isDark ? 'text-white' : 'text-slate-900'}`}
       >
         {/* Transition Progress Bar (Global AI Indicator) */}
         <div className="absolute top-0 left-0 right-0 h-1 z-[200] overflow-hidden">
@@ -1801,6 +2273,7 @@ export default function App() {
 
         {/* Display Area */}
         <section 
+          onClick={() => setKeyboardTarget('main')}
           className={`flex-1 min-h-0 rounded-2xl sm:rounded-3xl p-3 sm:p-5 border mb-3 relative group overflow-hidden transition-all duration-300 ${
             isEditing 
                 ? 'bg-white/[0.02] border-white/5 grayscale' 
@@ -1860,7 +2333,7 @@ export default function App() {
           </div>
           <div 
             ref={scrollRef}
-            className={`h-[calc(100%-20px)] sm:h-[calc(100%-24px)] overflow-y-auto text-2xl sm:text-4xl leading-relaxed whitespace-pre-wrap break-all custom-scrollbar flex flex-col font-ethiopic text-white`}
+            className={`h-[calc(100%-20px)] sm:h-[calc(100%-24px)] overflow-y-auto text-fluid-ethiopic leading-relaxed whitespace-pre-wrap break-all custom-scrollbar flex flex-col font-ethiopic text-white`}
           >
             {text ? (
               <div className="min-h-full">
@@ -2030,8 +2503,8 @@ export default function App() {
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
                     onClick={() => {
-                      setText(prev => prev + suggestion + ' ');
-                      setCursorIndex(prev => prev + suggestion.length + 1);
+                      updateTargetText(prev => prev + suggestion + ' ');
+                      updateTargetIndex((prev: number) => prev + suggestion.length + 1);
                       setAiSuggestions([]);
                     }}
                     className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl text-xs sm:text-md font-ethiopic transition-all flex items-center gap-2 whitespace-nowrap border border-blue-500/30 bg-blue-500/10 text-blue-200 shadow-sm shadow-blue-500/10`}
@@ -2090,319 +2563,8 @@ export default function App() {
           )}
         </AnimatePresence>
 
-        {/* Keyboard Responsive Layout Engine */}
-        <div 
-          className={`mx-auto w-full max-w-[600px] flex flex-col gap-[1%] transition-all relative shrink-0 p-1.5 sm:p-2 pb-[env(safe-area-inset-bottom)] ${isEditing ? 'scale-[1.01]' : ''}`}
-          style={{ height: `${keyboardSize}vh`, maxHeight: '45vh' }}
-        >
-          {/* Clipboard Overlay */}
-          <AnimatePresence>
-            {activeMenus.clipboard && (
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                className={`absolute inset-0 z-[120] rounded-3xl p-4 flex flex-col gap-4 overflow-hidden backdrop-blur-3xl border border-white/20 ${currentTheme.isDark ? 'bg-black/80' : 'bg-white/80'}`}
-              >
-                <div className="flex justify-between items-center shrink-0">
-                  <div className="flex items-center gap-2">
-                    <ClipboardList className={`w-4 h-4 ${currentTheme.isDark ? 'text-orange-400' : 'text-orange-600'}`} />
-                    <span className={`text-[10px] uppercase tracking-widest font-bold ${currentTheme.isDark ? 'text-white/60' : 'text-black/60'}`}>Smart Clipboard</span>
-                  </div>
-                  <button onClick={clearClipboard} className={`text-[10px] px-2 py-1 rounded-lg ${currentTheme.isDark ? 'bg-white/10 hover:bg-white/20' : 'bg-black/10 hover:bg-black/20'}`}>Clear All</button>
-                  <button onClick={() => toggleMenu('clipboard')} className="p-1.5 hover:bg-white/10 rounded-full transition-colors">
-                    <X className="w-4 h-4 opacity-50" />
-                  </button>
-                </div>
-
-                <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-6 pr-1">
-                  {/* Pinned Section */}
-                  {(pinnedItems.length > 0 || isEditing) && (
-                    <div className="flex flex-col gap-2">
-                      <div className="flex items-center gap-2 opacity-40 px-1">
-                        <Pin className="w-3 h-3" />
-                        <span className="text-[9px] uppercase tracking-wider font-mono">Pinned Items</span>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        {pinnedItems.map((item, i) => (
-                          <motion.button
-                            key={`pinned-${i}`}
-                            onClick={() => { 
-                              setText(prev => prev.slice(0, cursorIndex) + item + prev.slice(cursorIndex)); 
-                              setCursorIndex(prev => prev + item.length);
-                              setIsClipboardOpen(false); 
-                            }}
-                            onContextMenu={(e) => handleClipboardLongPress(item, true, e)}
-                            className={`px-3 py-2 rounded-xl text-xs flex items-center gap-2 border transition-all active:scale-95 ${currentTheme.isDark ? 'bg-orange-500/10 border-orange-500/20 text-orange-100 hover:bg-orange-500/20' : 'bg-orange-50/50 border-orange-200 text-orange-900 hover:bg-orange-100'}`}
-                          >
-                            <span className="truncate max-w-[120px] font-ethiopic">{item}</span>
-                          </motion.button>
-                        ))}
-                        {pinnedItems.length === 0 && <span className="p-4 text-[10px] opacity-20 italic">No pinned items yet...</span>}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Recents Section */}
-                  <div className="flex flex-col gap-2 pb-4">
-                    <div className="flex items-center gap-2 opacity-40 px-1">
-                      <RotateCcw className="w-3 h-3" />
-                      <span className="text-[9px] uppercase tracking-wider font-mono">Recent History</span>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {clipboardItems.map((item, i) => (
-                        <motion.button
-                          key={`recent-${i}`}
-                          onClick={() => { 
-                            setText(prev => prev.slice(0, cursorIndex) + item + prev.slice(cursorIndex)); 
-                            setCursorIndex(prev => prev + item.length);
-                            setIsClipboardOpen(false); 
-                          }}
-                          onContextMenu={(e) => handleClipboardLongPress(item, false, e)}
-                          className={`px-3 py-2 rounded-xl text-xs flex items-center gap-2 border transition-all active:scale-95 ${currentTheme.isDark ? 'bg-white/5 border-white/10 text-white/80 hover:bg-white/10' : 'bg-black/5 border-black/10 text-black/80 hover:bg-black/10'}`}
-                        >
-                          <span className="truncate max-w-[120px] font-ethiopic">{item}</span>
-                        </motion.button>
-                      ))}
-                      {clipboardItems.length === 0 && <span className="p-4 text-[10px] opacity-20 italic">History is empty...</span>}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Clipboard Action Menu */}
-                <AnimatePresence>
-                  {clipboardActionMenu && (
-                    <motion.div
-                      initial={{ opacity: 0, scale: 0.9, y: 10 }}
-                      animate={{ opacity: 1, scale: 1, y: -10 }}
-                      exit={{ opacity: 0, scale: 0.9, y: 10 }}
-                      className="absolute z-[130] bg-white/10 backdrop-blur-3xl border border-white/20 p-1.5 rounded-2xl shadow-2xl flex gap-1"
-                      style={{ left: Math.min(window.innerWidth - 150, clipboardActionMenu.x - 70), top: clipboardActionMenu.y - 60 }}
-                    >
-                      <button 
-                        onClick={() => { togglePin(clipboardActionMenu.item); setClipboardActionMenu(null); }}
-                        className="p-2 hover:bg-white/10 rounded-xl transition-all"
-                        title={clipboardActionMenu.isPinned ? "Unpin" : "Pin"}
-                      >
-                        {clipboardActionMenu.isPinned ? <PinOff className="w-4 h-4 text-orange-400" /> : <Pin className="w-4 h-4 text-white/60" />}
-                      </button>
-                      <button 
-                        onClick={() => deleteClipboardItem(clipboardActionMenu.item, clipboardActionMenu.isPinned)}
-                        className="p-2 hover:bg-red-500/20 rounded-xl transition-all"
-                        title="Delete"
-                      >
-                        <Trash2 className="w-4 h-4 text-red-400" />
-                      </button>
-                      <button 
-                        onClick={() => setClipboardActionMenu(null)}
-                        className="p-2 hover:bg-white/10 rounded-xl transition-all"
-                        title="Cancel"
-                      >
-                        <X className="w-4 h-4 opacity-50" />
-                      </button>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* Symbol Overlay Indicator */}
-          {isSymbols && (
-            <div className="absolute -top-5 sm:-top-6 left-4 text-[9px] sm:text-[10px] uppercase tracking-widest text-white/30 font-mono">
-              Symbols & Numbers
-            </div>
-          )}
-
-          {/* Vowel Menu Popup */}
-          <AnimatePresence>
-            {vowelMenu && (
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: -8 }}
-                exit={{ opacity: 0, y: 10 }}
-                className="absolute left-0 bottom-full w-full z-[110] bg-white/10 backdrop-blur-3xl border-t border-white/10 p-2 flex justify-center gap-3 shadow-[0_-10px_30px_rgba(0,0,0,0.3)]"
-              >
-                {vowelMenu.variations.map((v, i) => (
-                  <button
-                    key={i}
-                    onClick={() => selectVariation(v)}
-                    className="w-12 h-16 sm:w-14 sm:h-18 bg-white/10 hover:bg-white/30 rounded-xl flex items-center justify-center text-2xl sm:text-3xl ethiopic-font border border-white/20 transition-all hover:scale-110 active:scale-90 shrink-0 shadow-lg text-white"
-                  >
-                    {v}
-                  </button>
-                ))}
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          <AnimatePresence>
-            {activeMenus.emoji && (
-              <motion.div
-                initial={{ opacity: 0, scale: 0.9, y: 20 }}
-                animate={{ opacity: 1, scale: 1, y: -20 }}
-                exit={{ opacity: 0, scale: 0.9, y: 20 }}
-                className="absolute left-1/2 -translate-x-1/2 z-[100] w-full max-w-[400px] bg-white/10 backdrop-blur-3xl border border-white/20 p-4 rounded-3xl shadow-[0_20px_60px_rgba(0,0,0,0.6)]"
-                style={{ top: -160 }}
-              >
-                <div className="flex justify-between items-center mb-3 px-1">
-                  <span className="text-[10px] uppercase tracking-widest text-white/40 font-mono">Frequently Used</span>
-                  <button onClick={() => toggleMenu('emoji')} aria-label="Close Emoji Menu" className="p-1 hover:bg-white/10 rounded-full transition-colors">
-                    <X className="w-3 h-3 text-white/60" />
-                  </button>
-                </div>
-                <div className="grid grid-cols-6 gap-2">
-                  {EMOJIS.map((emoji, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => {
-                        setText(prev => prev.slice(0, cursorIndex) + emoji + prev.slice(cursorIndex));
-                        setCursorIndex(prev => prev + emoji.length);
-                        toggleMenu('emoji');
-                      }}
-                      aria-label={`Insert Emoji: ${emoji}`}
-                      className="w-full aspect-square flex items-center justify-center text-2xl hover:bg-white/10 rounded-xl transition-all hover:scale-110 active:scale-95"
-                    >
-                      {emoji}
-                    </button>
-                  ))}
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {(isSymbols ? SYMBOL_ROWS : layout).map((row, rowIndex) => (
-            <div key={rowIndex} className="flex justify-center gap-1 flex-1 items-stretch w-full">
-              {row.map((key, colIndex) => {
-                const isSpecial = ['shift', 'backspace', 'globe', 'space', 'enter', '123', 'mic', 'emoji', 'ABC'].includes(key);
-                const isPressed = activeKey === key;
-                const isSelected = selectedKey?.row === rowIndex && selectedKey?.col === colIndex;
-                const currentLabel = isShift ? key.toUpperCase() : key.toLowerCase();
-                const displayChar = (activeLanguage === 'english' || isSymbols) ? currentLabel : (GEEZ_MAP[key.toUpperCase()]?.[0] || key);
-
-                return (
-                  <motion.button
-                    key={`${rowIndex}-${colIndex}-${key}`}
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.95, backgroundColor: 'rgba(255,255,255,0.2)' }}
-                    onMouseDown={(e) => { 
-                      if (key === 'space') handleSpaceSwipeStart(e);
-                      else handleKeyPress(key, rowIndex, colIndex);
-                      if (!isSpecial) startLongPress(key, e);
-                    }}
-                    onMouseMove={(e) => {
-                      if (key === 'space') handleSpaceSwipeMove(e);
-                    }}
-                    onMouseUp={(e) => {
-                      if (key === 'space') handleSpaceSwipeEnd();
-                      cancelLongPress();
-                    }}
-                    onMouseLeave={(e) => {
-                      if (key === 'space') handleSpaceSwipeEnd();
-                      cancelLongPress();
-                    }}
-                    onTouchStart={(e) => {
-                      e.preventDefault();
-                      if (key === 'space') handleSpaceSwipeStart(e);
-                      else handleKeyPress(key, rowIndex, colIndex);
-                      if (!isSpecial) startLongPress(key, e);
-                    }}
-                    onTouchMove={(e) => {
-                      if (key === 'space') handleSpaceSwipeMove(e);
-                    }}
-                    onTouchEnd={(e) => {
-                      if (key === 'space') handleSpaceSwipeEnd();
-                      cancelLongPress();
-                    }}
-                    aria-label={`Keyboard key ${key}`}
-                    className={`
-                      relative rounded-lg sm:rounded-xl flex flex-col items-center justify-center transition-all cursor-pointer font-ethiopic
-                      ${isPressed ? 'z-50 ring-2 ring-blue-400 scale-[1.05]' : 'z-10'}
-                      ${isSpecial ? (currentTheme.isDark ? 'bg-white/[0.03] text-white/70' : 'bg-black/[0.03] text-black/60') : (currentTheme.isDark ? 'bg-white/[0.12] border-white/[0.15] text-white' : 'bg-white border-black/[0.05] text-slate-800 shadow-sm')}
-                      backdrop-blur-[12px] border px-1 text-[clamp(14px,4vw,24px)]
-                      ${isSpecial ? 'text-[clamp(0.6rem,2vw,0.8rem)] uppercase tracking-tight' : ''}
-                      ${key === 'space' ? (isCursorMode ? '!bg-blue-400 !text-white' : activeLanguage === 'tigrinya' ? '!bg-[#059669] !text-white border-green-700/50' : activeLanguage === 'amharic' ? '!bg-[#059669] !text-white border-green-700/50' : (currentTheme.isDark ? '!bg-white !text-black' : '!bg-slate-800 !text-white')) + ' flex-[4] tracking-widest min-w-0 transition-colors' : (['enter', 'shift', 'backspace', '123', 'ABC'].includes(key) ? 'flex-[1.5]' : 'flex-1')}
-                      ${key === 'globe' ? (activeLanguage === 'tigrinya' ? 'text-green-400' : activeLanguage === 'amharic' ? 'text-amber-400' : currentTheme.accentText) : ''}
-                      ${key === 'mic' && isListening ? 'text-rose-400 bg-rose-500/20 animate-pulse border-rose-500/30' : ''}
-                      ${key === 'enter' ? `${currentTheme.accentBg} ${currentTheme.accentText} font-bold border ${currentTheme.accentBorder}` : ''}
-                      ${key === 'shift' && isShift ? `${currentTheme.accentBg} ${currentTheme.accentText} border ${currentTheme.accentBorder}` : ''}
-                      ${isEditing ? (currentTheme.isDark ? 'border-dashed border-white/20' : 'border-dashed border-black/20') : (currentTheme.isDark ? 'hover:bg-white/[0.12]' : 'hover:bg-black/[0.05]')}
-                      ${isSelected ? `${currentTheme.accentBg} border-solid scale-105 z-20 shadow-lg` : ''}
-                    `}
-                  >
-                    <AnimatePresence>
-                      {isPressed && !isSpecial && !isEditing && (
-                        <motion.div
-                          initial={{ opacity: 0, y: 0, scale: 0.5 }}
-                          animate={{ opacity: 1, y: -60, scale: 1.5 }}
-                          exit={{ opacity: 0, y: -80, scale: 1.2 }}
-                          className="absolute z-50 bg-white/20 backdrop-blur-3xl text-white p-4 rounded-2xl font-bold text-3xl border border-white/30 shadow-2xl pointer-events-none"
-                        >
-                          {displayChar}
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-
-                  {/* Key Content */}
-                    <span className="relative z-10 flex flex-col items-center justify-center w-full h-full">
-                      {key === 'shift' && <ChevronUp className="w-5 h-5 sm:w-6 sm:h-6 opacity-90" />}
-                      {key === 'backspace' && <Delete className="w-5 h-5 sm:w-6 sm:h-6 opacity-90" />}
-                      {key === 'mic' && (isListening ? <MicOff className="w-5 h-5 sm:w-6 sm:h-6 text-rose-500" /> : <Mic className="w-5 h-5 sm:w-6 sm:h-6 opacity-90" />)}
-                      {key === 'emoji' && <Smile className="w-5 h-5 sm:w-6 sm:h-6 opacity-90" />}
-                      {key === 'globe' && (
-                        activeLanguage === 'english' ? <Languages className="w-5 h-5 sm:w-6 sm:h-6 opacity-70 text-blue-400" /> : 
-                        activeLanguage === 'amharic' ? <Globe className="w-5 h-5 sm:w-6 sm:h-6 text-amber-500" /> : 
-                        <Globe className="w-5 h-5 sm:w-6 sm:h-6 text-emerald-500" />
-                      )}
-                      {key === 'space' && <span className={`text-[10px] sm:text-xs font-bold uppercase tracking-widest ${
-                        activeLanguage === 'english' ? 'text-blue-200' : 
-                        activeLanguage === 'amharic' ? 'text-amber-200' : 'text-emerald-200'
-                      }`}>
-                        {isCursorMode ? 'CURSOR' : (activeLanguage === 'english' ? 'English' : activeLanguage === 'amharic' ? 'Amharic' : 'Tigrinya')}
-                      </span>}
-                      {key === 'enter' && <CornerDownLeft className="w-5 h-5 sm:w-6 sm:h-6" />}
-                      {key === '123' && <span className="font-bold text-xs sm:text-sm">123</span>}
-                      {key === 'ABC' && <span className="font-bold text-xs sm:text-sm">ABC</span>}
-                      
-                      {!isSpecial && (
-                        <>
-                          {GEEZ_MAP[key.toUpperCase()] && activeLanguage !== 'english' && !isSymbols && (
-                            <span 
-                              className="absolute top-1 right-1.5 text-[8px] sm:text-[10px] text-white/20 font-ethiopic"
-                              style={{ fontSize: `${8 * (keyScale/100)}px` }}
-                            >
-                              {key.toLowerCase()}
-                            </span>
-                          )}
-                          {EN_LABELS[key.toUpperCase()] && activeLanguage !== 'english' && !isSymbols && (
-                            <span 
-                              className="absolute top-1 left-1.5 text-[7px] sm:text-[9px] text-white/40 font-sans font-bold"
-                              style={{ fontSize: `${7 * (keyScale/100)}px` }}
-                            >
-                              {EN_LABELS[key.toUpperCase()].toLowerCase()}
-                            </span>
-                          )}
-                          <span 
-                            className={`text-center leading-none px-[2%] break-words overflow-hidden flex items-center justify-center h-full w-full ${
-                              activeLanguage === 'english' ? 'text-blue-100' : 
-                              activeLanguage === 'amharic' ? 'text-amber-100' : 'text-emerald-100'
-                            }`}
-                            style={{ 
-                              // Fully Dynamic Font: Scales by viewport width but stays within key boundaries
-                              fontSize: `clamp(10px, ${3.5 * (keyScale / 100)}vw, 28px)`,
-                            }}
-                          >
-                            {displayChar}
-                          </span>
-                        </>
-                      )}
-                    </span>
-                  </motion.button>
-                );
-              })}
-            </div>
-          ))}
-        </div>
+        {/* Keyboard Component */}
+        {renderKeyboardUI(false)}
 
         {/* iOS Indicator Bar */}
         <div className="absolute bottom-2 left-1/2 -translate-x-1/2 w-32 h-1 bg-white/20 rounded-full"></div>
@@ -2423,7 +2585,6 @@ export default function App() {
             </motion.div>
           )}
         </AnimatePresence>
-      </motion.div>
 
       {/* Generator Prompt Overlay */}
       <AnimatePresence>
@@ -2634,375 +2795,21 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* Keyboard Settings Drawer */}
-      <AnimatePresence>
-        {activeMenus.settings && (
-          <motion.div
-            initial={{ x: '100%' }}
-            animate={{ x: 0 }}
-            exit={{ x: '100%' }}
-            transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-            className={`fixed inset-y-0 right-0 z-[150] w-full sm:max-w-md backdrop-blur-3xl border-l shadow-2xl flex flex-col overflow-hidden ${currentTheme.isDark ? 'bg-slate-950/95 border-white/10 text-white' : 'bg-white/95 border-black/10 text-slate-900'}`}
-          >
-            <div className="flex justify-between items-center p-6 border-b border-white/10">
-              <div className="flex items-center gap-3">
-                <Settings2 className="w-6 h-6 text-blue-500" />
-                <h2 className="font-bold text-xl tracking-tight">Universal Settings</h2>
-              </div>
-              <div className="flex items-center gap-2">
-                <button 
-                  onClick={factoryReset}
-                  className="p-2 hover:bg-red-500/20 text-red-400 rounded-lg transition-colors border border-red-500/20"
-                  title="Factory Reset"
-                >
-                  <RotateCcw className="w-5 h-5" />
-                </button>
-                <button 
-                  onClick={() => toggleMenu('settings')}
-                  className="p-2 hover:bg-white/10 rounded-full transition-colors"
-                  aria-label="Close Settings"
-                >
-                  <X className="w-6 h-6 opacity-60" />
-                </button>
-              </div>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-6 space-y-8 custom-scrollbar">
-              {/* Size Customization Section */}
-              <section className="p-4 rounded-2xl bg-white/5 border border-white/5">
-                <h3 className="text-xs font-bold uppercase tracking-[0.2em] mb-6 opacity-40 text-blue-400">Universal Scaling</h3>
-                
-                <div className="space-y-8">
-                  {/* Master Scale Slider with Magnetic Snap */}
-                  <div className="space-y-4">
-                    <div className="flex justify-between items-center px-1">
-                      <div className="flex items-center gap-2">
-                        <Zap className="w-4 h-4 text-orange-400" />
-                        <span className="text-sm font-medium">Master UI Scale</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {[0.8, 1.0, 1.2].includes(masterScale) && (
-                          <span className="text-[10px] bg-orange-500/20 text-orange-400 px-1.5 py-0.5 rounded uppercase font-bold animate-pulse">Snapped</span>
-                        )}
-                        <span className="text-xs font-mono text-orange-400">{(masterScale * 100).toFixed(0)}%</span>
-                      </div>
-                    </div>
-                    <div className="relative pt-2">
-                      <input 
-                        type="range" 
-                        min="0.8" 
-                        max="1.4" 
-                        step="0.01"
-                        value={masterScale}
-                        onChange={(e) => {
-                          let val = parseFloat(e.target.value);
-                          // Hard Boundary: 0.8 to 1.4
-                          val = Math.max(0.8, Math.min(1.4, val));
-                          
-                          const SNAP_POINTS = [0.8, 1.0, 1.2];
-                          let snappedValue = val;
-                          
-                          for (const point of SNAP_POINTS) {
-                            if (Math.abs(val - point) < 0.035) {
-                              snappedValue = point;
-                              break;
-                            }
-                          }
-
-                          setMasterScale(snappedValue);
-                          localStorage.setItem('master_scale', snappedValue.toString());
-                          
-                          if (snappedValue !== val && snappedValue !== lastSnap) {
-                            setLastSnap(snappedValue);
-                            if ("vibrate" in navigator) navigator.vibrate(5);
-                          }
-                        }}
-                        className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-orange-500 relative z-10"
-                      />
-                      {/* Snap Point Indicators */}
-                      <div className="absolute top-2.5 left-0 w-full flex justify-between px-[1%] pointer-events-none opacity-20">
-                         <div className="w-0.5 h-1.5 bg-white translate-x-[6.25%]" title="Small (0.8)" />
-                         <div className="w-0.5 h-1.5 bg-white translate-x-[31.25%]" title="Default (1.0)" />
-                         <div className="w-0.5 h-1.5 bg-white translate-x-[56.25%]" title="Large (1.2)" />
-                      </div>
-                    </div>
-                    <div className="flex justify-between px-1 text-[9px] text-white/30 font-mono tracking-tighter">
-                      <span>MIN (75%)</span>
-                      <span className={masterScale === 0.8 ? 'text-orange-400 font-bold' : ''}>SM</span>
-                      <span className={masterScale === 1.0 ? 'text-orange-400 font-bold' : ''}>DEF</span>
-                      <span className={masterScale === 1.2 ? 'text-orange-400 font-bold' : ''}>LG</span>
-                      <span>MAX</span>
-                    </div>
-                  </div>
-
-                  {/* Keyboard Height Slider */}
-                  <div className="space-y-4">
-                    <div className="flex justify-between items-center px-1">
-                      <div className="flex items-center gap-2">
-                        <Maximize2 className="w-4 h-4 text-white/60" />
-                        <span className="text-sm font-medium">Keyboard Height</span>
-                      </div>
-                      <span className="text-xs font-mono text-blue-400">{keyboardSize}vh</span>
-                    </div>
-                    <input 
-                      type="range" 
-                      min="30" 
-                      max="60" 
-                      value={keyboardSize}
-                      onChange={(e) => {
-                        const val = parseInt(e.target.value);
-                        setKeyboardSize(val);
-                        localStorage.setItem('keyboard_size', val.toString());
-                      }}
-                      className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-blue-500"
-                    />
-                  </div>
-
-                  {/* Font Size Slider */}
-                  <div className="space-y-4">
-                    <div className="flex justify-between items-center px-1">
-                      <div className="flex items-center gap-2">
-                        <Type className="w-4 h-4 text-white/60" />
-                        <span className="text-sm font-medium">Character Scale</span>
-                      </div>
-                      <span className="text-xs font-mono text-blue-400">{keyScale}%</span>
-                    </div>
-                    <input 
-                      type="range" 
-                      min="80" 
-                      max="150" 
-                      value={keyScale}
-                      onChange={(e) => {
-                        const val = parseInt(e.target.value);
-                        setKeyScale(val);
-                        localStorage.setItem('key_scale', val.toString());
-                      }}
-                      className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-blue-500"
-                    />
-                  </div>
-
-                  {/* Transparency Slider */}
-                  <div className="space-y-4">
-                    <div className="flex justify-between items-center px-1">
-                      <div className="flex items-center gap-2">
-                        <Palette className="w-4 h-4 text-emerald-400" />
-                        <span className="text-sm font-medium">Theme Transparency</span>
-                      </div>
-                      <span className="text-xs font-mono text-emerald-400">{themeTransparency}%</span>
-                    </div>
-                    <input 
-                      type="range" 
-                      min="0" 
-                      max="100" 
-                      value={themeTransparency}
-                      onChange={(e) => {
-                        const val = parseInt(e.target.value);
-                        setThemeTransparency(val);
-                        localStorage.setItem('theme_transparency', val.toString());
-                      }}
-                      className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-                    />
-                  </div>
-                </div>
-              </section>
-
-              {/* Toolbar Customizer Section */}
-              <section className="p-4 rounded-2xl bg-white/5 border border-white/5">
-                <div className="flex justify-between items-center mb-6">
-                  <h3 className="text-xs font-bold uppercase tracking-[0.2em] opacity-40 text-blue-400">Toolbar Customizer</h3>
-                  <button onClick={resetToolbar} className="text-[10px] text-white/40 hover:text-white flex items-center gap-1 transition-colors">
-                    <RotateCcw className="w-3 h-3" /> Reset
-                  </button>
-                </div>
-                
-                <div className="space-y-2">
-                  {toolbarOrder.map((toolId, index) => {
-                    const isVisible = !hiddenTools.includes(toolId);
-                    const toolLabels: Record<string, { label: string, icon: any }> = {
-                      ai: { label: 'AI Magic', icon: Sparkles },
-                      chat: { label: 'AI Assistant', icon: MessageSquare },
-                      globe: { label: 'Language Layout', icon: Globe },
-                      translate: { label: 'Translation Bar', icon: ArrowLeftRight },
-                      clipboard: { label: 'Smart Clipboard', icon: ClipboardList },
-                      settings: { label: 'Settings', icon: Settings2 },
-                      mic: { label: 'Voice Input', icon: Mic },
-                    };
-                    const { label, icon: Icon } = toolLabels[toolId];
-
-                    return (
-                      <div key={toolId} className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${isVisible ? 'bg-white/5 border-white/10' : 'opacity-40 bg-black/20 border-transparent strike-through'}`}>
-                        <div className="flex flex-col gap-1">
-                          <button onClick={() => moveTool(index, 'up')} disabled={index === 0} className="p-0.5 hover:bg-white/10 rounded disabled:opacity-10"><ChevronUp className="w-3 h-3"/></button>
-                          <button onClick={() => moveTool(index, 'down')} disabled={index === toolbarOrder.length - 1} className="p-0.5 hover:bg-white/10 rounded disabled:opacity-10"><CornerDownLeft className="w-3 h-3 rotate-90 scale-y-[-1]"/></button>
-                        </div>
-                        <Icon className="w-4 h-4 text-blue-400 shrink-0" />
-                        <span className="flex-1 text-sm font-medium">{label}</span>
-                        <button 
-                          onClick={() => toggleToolVisibility(toolId)}
-                          className={`p-2 rounded-lg transition-all ${isVisible ? 'bg-red-500/10 text-red-400' : 'bg-green-500/10 text-green-400'}`}
-                        >
-                          {isVisible ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              </section>
-
-              {/* Theme Section */}
-              <section>
-                <h3 className="text-xs font-bold uppercase tracking-[0.2em] mb-4 opacity-40">Appearance & Theme</h3>
-                <div className="grid grid-cols-1 gap-2">
-                  {(Object.keys(THEMES) as ThemeKey[]).map((key) => (
-                    <button
-                      key={key}
-                      onClick={() => changeTheme(key)}
-                      className={`w-full p-4 rounded-2xl border transition-all flex items-center justify-between group h-20 overflow-hidden relative ${
-                        themeKey === key 
-                          ? 'border-blue-500 bg-blue-500/10' 
-                          : 'border-white/5 hover:border-white/20'
-                      }`}
-                    >
-                      <div 
-                        className="absolute inset-0 opacity-20 pointer-events-none transition-transform group-hover:scale-110"
-                        style={{ background: THEMES[key].mesh.join(', ') }}
-                      />
-                      <div className="relative z-10">
-                        <div className="font-bold text-lg">{THEMES[key].name}</div>
-                        <div className="text-xs opacity-50 capitalize">{key} mode</div>
-                      </div>
-                      {themeKey === key && <Check className="w-6 h-6 text-blue-500 relative z-10" />}
-                    </button>
-                  ))}
-                </div>
-              </section>
-
-              {/* Shortcuts Section */}
-              <section>
-                <div className="flex justify-between items-center mb-4">
-                  <h3 className="text-xs font-bold uppercase tracking-[0.2em] opacity-40 text-blue-400">Word Shortcuts</h3>
-                  <button 
-                    onClick={() => toggleMenu('shortcuts')}
-                    className="text-[10px] text-blue-400 font-bold px-2 py-1 bg-blue-400/10 rounded-lg hover:bg-blue-400/20"
-                  >
-                    Manage
-                  </button>
-                </div>
-                <div className="space-y-4">
-                  <div className="flex gap-2">
-                    <input 
-                      type="text" 
-                      placeholder="Trigger (e.g. adr)" 
-                      value={newShortcutKey}
-                      onChange={(e) => setNewShortcutKey(e.target.value)}
-                      className={`flex-1 px-4 py-3 rounded-xl text-sm border focus:ring-2 focus:ring-blue-500 transition-all ${currentTheme.isDark ? 'bg-white/5 border-white/10' : 'bg-black/5 border-black/10'}`}
-                    />
-                    <input 
-                      type="text" 
-                      placeholder="Expansion" 
-                      value={newShortcutValue}
-                      onChange={(e) => setNewShortcutValue(e.target.value)}
-                      className={`flex-2 px-4 py-3 rounded-xl text-sm border focus:ring-2 focus:ring-blue-500 transition-all ${currentTheme.isDark ? 'bg-white/5 border-white/10' : 'bg-black/5 border-black/10'}`}
-                    />
-                    <button 
-                      onClick={() => {
-                        if (newShortcutKey.trim() && newShortcutValue.trim()) {
-                          setShortcuts(prev => ({ ...prev, [newShortcutKey.toLowerCase()]: newShortcutValue }));
-                          setNewShortcutKey('');
-                          setNewShortcutValue('');
-                          showToast('Shortcut Added');
-                        }
-                      }}
-                      className="p-3 bg-blue-500 text-white rounded-xl hover:bg-blue-600 transition-colors"
-                    >
-                      <Plus className="w-5 h-5" />
-                    </button>
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-2 max-h-40 overflow-y-auto no-scrollbar">
-                    {Object.entries(shortcuts).map(([key, value]) => (
-                      <div key={key} className={`flex items-center justify-between p-3 rounded-xl border ${currentTheme.isDark ? 'bg-white/5 border-white/5' : 'bg-black/5 border-black/5'}`}>
-                        <div className="flex items-center gap-3">
-                          <span className="font-mono text-xs text-blue-400">{key}</span>
-                          <span className="text-sm opacity-70 truncate max-w-[150px]">{value}</span>
-                        </div>
-                        <button 
-                          onClick={() => {
-                            const newShortcuts = { ...shortcuts };
-                            delete newShortcuts[key];
-                            setShortcuts(newShortcuts);
-                          }}
-                          className="p-1.5 hover:bg-red-500/10 rounded-lg text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
-                        >
-                          <Trash className="w-3.5 h-3.5" />
-                        </button>
-                        <Trash 
-                          className="w-3.5 h-3.5 text-red-400/50 cursor-pointer hover:text-red-400 transition-colors" 
-                          onClick={() => {
-                            const ns = {...shortcuts};
-                            delete ns[key];
-                            setShortcuts(ns);
-                          }}
-                        />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </section>
-
-              {/* Layout Customization Section */}
-              <section className="bg-orange-500/5 border border-orange-500/10 rounded-3xl p-6">
-                <h3 className="text-xs font-bold uppercase tracking-[0.2em] mb-4 text-orange-400">Keyboard Layout</h3>
-                <p className="text-xs opacity-60 mb-6 leading-relaxed">
-                  Toggle Layout Editing mode to rearrange keys by dragging them. Your changes will be saved locally.
-                </p>
-                <div className="flex gap-3">
-                  <button 
-                    onClick={() => {
-                      setIsEditing(!isEditing);
-                      toggleMenu('settings');
-                      showToast(isEditing ? 'Editing Disabled' : 'Editing Mode Active');
-                    }}
-                    className={`flex-1 py-3 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 ${
-                      isEditing 
-                      ? 'bg-orange-500 text-white shadow-xl shadow-orange-500/20' 
-                      : 'bg-white/5 hover:bg-white/10 text-orange-400 border border-orange-500/30'
-                    }`}
-                  >
-                    <Wand2 className="w-4 h-4" />
-                    {isEditing ? 'Finish Editing' : 'Customize Keys'}
-                  </button>
-                  <button 
-                    onClick={resetLayout}
-                    className="p-3 bg-white/5 hover:bg-white/10 rounded-xl text-white/40 hover:text-white transition-all border border-white/5"
-                    title="Reset to Default"
-                  >
-                    <RotateCcw className="w-5 h-5" />
-                  </button>
-                </div>
-              </section>
-
-              {/* Help & About Section */}
-              <section className="pt-4 border-t border-white/5">
-                <div className="flex items-center gap-4 text-white/30 text-xs">
-                  <span>Version 1.0.4-AI</span>
-                  <div className="w-1 h-1 bg-white/10 rounded-full" />
-                  <span>Ge'ez Engine 2.0</span>
-                </div>
-              </section>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* Removed Keyboard Settings Drawer */}
         {/* Real-time AI Assistant Chat Overlay */}
         <AnimatePresence>
           {showChat && (
             <motion.div
-              initial={{ opacity: 0, y: '100%' }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: '100%' }}
-              className={`fixed inset-0 z-[500] flex flex-col transition-colors duration-500 ${
-                currentTheme.isDark ? 'bg-slate-950' : 'bg-slate-100'
+              layout
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className={`fixed z-[500] flex flex-col shadow-2xl overflow-hidden transition-all duration-500 border border-white/10 ${
+                chatIsMaximized 
+                  ? 'inset-0 md:inset-4 rounded-none md:rounded-[3rem]' 
+                  : 'inset-3 sm:inset-[5%] md:inset-[8%] lg:inset-[12%] xl:max-w-screen-xl xl:mx-auto rounded-[2rem] md:rounded-[3rem]'
+              } ${
+                currentTheme.isDark ? 'bg-slate-950/95' : 'bg-slate-100/95'
               }`}
             >
               {/* Mesh Background for Chat */}
@@ -3011,30 +2818,41 @@ export default function App() {
                 <div className={`absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full blur-[120px] ${currentTheme.isDark ? 'bg-orange-600/20' : 'bg-orange-400/10'}`} />
               </div>
 
-              <div className="relative flex flex-col h-full z-10 backdrop-blur-3xl">
-                <div className={`flex items-center justify-between p-4 border-b shrink-0 ${
+              <div className="relative flex flex-col h-full z-10 backdrop-blur-3xl overflow-hidden">
+                <div className={`flex items-center justify-between p-4 sm:p-5 border-b shrink-0 ${
                   currentTheme.isDark ? 'border-white/10 bg-black/40' : 'border-black/5 bg-white/60'
                 }`}>
-                <div className="flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center border ${
-                    currentTheme.isDark ? 'bg-blue-500/20 border-blue-500/30' : 'bg-blue-500/10 border-blue-500/20'
+                <div className="flex items-center gap-3 sm:gap-4">
+                  <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-2xl flex items-center justify-center border shadow-lg ${
+                    currentTheme.isDark ? 'bg-blue-500/20 border-blue-500/30' : 'bg-blue-500/10 border-blue-500/20 shadow-blue-500/5'
                   }`}>
-                    <Bot className={`w-6 h-6 ${currentTheme.isDark ? 'text-blue-400' : 'text-blue-600'}`} />
+                    <Bot className={`w-6 h-6 sm:w-7 sm:h-7 ${currentTheme.isDark ? 'text-blue-400' : 'text-blue-600'}`} />
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
-                       <h3 className={`font-bold tracking-tight ${currentTheme.isDark ? 'text-white' : 'text-slate-900'}`}>AI Pro Assistant</h3>
-                       <span className="px-1.5 py-0.5 rounded-md bg-blue-500/10 border border-blue-500/20 text-[8px] font-black uppercase tracking-tighter text-blue-400 shadow-[0_0_10px_rgba(59,130,246,0.1)]">PRO</span>
+                       <h3 className={`font-black tracking-tight text-sm sm:text-base ${currentTheme.isDark ? 'text-white' : 'text-slate-900'}`}>AI Pro Assistant</h3>
+                       <span className="px-1.5 py-0.5 rounded-md bg-blue-500/10 border border-blue-500/20 text-[8px] sm:text-[9px] font-black uppercase tracking-tighter text-blue-400 shadow-[0_0_10px_rgba(59,130,246,0.1)]">PRO</span>
                     </div>
                     <div className="flex items-center gap-1.5">
-                      <div className={`w-1.5 h-1.5 rounded-full ${isLiveMode ? 'bg-rose-500 animate-[ping_1.5s_infinite]' : 'bg-green-500'} animate-pulse`} />
-                      <span className={`text-[10px] uppercase tracking-widest font-bold ${isLiveMode ? 'text-rose-500' : (currentTheme.isDark ? 'text-green-500' : 'text-green-600')}`}>
-                         {isLiveMode ? 'Live / Talking' : 'Online'}
+                      <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                      <span className={`text-[10px] uppercase tracking-widest font-black ${currentTheme.isDark ? 'text-green-500/80' : 'text-green-600/80'}`}>
+                         Secure Connection
                       </span>
                     </div>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => toggleMenu('history')}
+                    className={`p-2.5 rounded-xl transition-all ${
+                      activeMenus.history
+                        ? 'bg-blue-600 text-white' 
+                        : (currentTheme.isDark ? 'bg-white/5 text-white/80 hover:bg-white/10' : 'bg-black/5 text-black/80 hover:bg-black/10')
+                    }`}
+                    title="Chat History"
+                  >
+                    <History className="w-5 h-5" />
+                  </button>
                   <button
                     onClick={() => {
                       if (panelSources.length > 0) {
@@ -3072,12 +2890,19 @@ export default function App() {
                     <Search className="w-5 h-5" />
                   </button>
                   <button
+                    onClick={() => setChatIsMaximized(!chatIsMaximized)}
+                    className={`p-2.5 rounded-xl transition-all ${
+                      currentTheme.isDark ? 'bg-white/5 text-white/80 hover:bg-white/10' : 'bg-black/5 text-black/80 hover:bg-black/10'
+                    }`}
+                    title={chatIsMaximized ? "Minimize" : "Maximize"}
+                  >
+                    {chatIsMaximized ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
+                  </button>
+                  <button
                     onClick={() => {
-                      if (confirm("Start a new chat session?")) {
-                        setChatMessages(() => []);
-                        chatSessionRef.current = null;
-                        showToast("New chat started");
-                      }
+                      startNewChatSession();
+                      chatSessionRef.current = null;
+                      showToast("New chat started");
                     }}
                     className={`p-2.5 rounded-xl transition-all ${
                       currentTheme.isDark ? 'bg-white/5 text-white/80 hover:bg-white/10' : 'bg-black/5 text-black/80 hover:bg-black/10'
@@ -3087,52 +2912,17 @@ export default function App() {
                     <MessageSquarePlus className="w-5 h-5" />
                   </button>
                   <button 
-                    onClick={() => setShowChatSettingsMenu(!showChatSettingsMenu)}
-                    className={`p-2.5 rounded-xl transition-all ${
-                      showChatSettingsMenu 
-                        ? 'bg-blue-600 text-white' 
-                        : (currentTheme.isDark ? 'bg-white/5 text-white/40 hover:bg-white/10' : 'bg-black/5 text-black/40 hover:bg-black/10')
-                    }`}
-                    title="Universal Settings"
-                  >
-                    <Settings2 className="w-5 h-5" />
-                  </button>
-                  <button 
-                    onClick={() => setIsVisionMode(!isVisionMode)}
-                    className={`p-2.5 rounded-xl flex items-center gap-2 transition-all group ${
-                      isVisionMode 
-                        ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/40 ring-1 ring-blue-500/50' 
-                        : 'bg-white/5 hover:bg-white/10 text-white/60'
-                    }`}
-                    title={isVisionMode ? "Disable Vision" : "Enable Vision"}
-                  >
-                    {isVisionMode ? <Eye className="w-5 h-5" /> : <EyeOff className="w-5 h-5 opacity-70 group-hover:opacity-100" />}
-                  </button>
-                  <button 
-                    onClick={() => setShowLiveSettings(!showLiveSettings)}
-                    className={`p-2 rounded-full transition-colors ${showLiveSettings ? 'bg-white/20' : 'hover:bg-white/10'}`}
-                    title="Live Voice Settings"
-                  >
-                    <Settings2 className="w-5 h-5 text-white/60" />
-                  </button>
-                  <button 
-                    onClick={() => setIsLiveMode(!isLiveMode)}
-                    className={`p-2.5 rounded-xl flex items-center gap-2 transition-all group ${
-                      isLiveMode 
-                        ? 'bg-rose-600 text-white shadow-lg shadow-rose-900/40 ring-1 ring-rose-500/50' 
-                        : 'bg-white/5 hover:bg-white/10 text-white/60'
-                    }`}
-                  >
-                    {isLiveMode ? <Mic2 className="w-5 h-5 animate-pulse" /> : <Headphones className="w-5 h-5 opacity-70 group-hover:opacity-100" />}
-                    <span className="text-[10px] font-bold uppercase tracking-widest hidden sm:inline">
-                      {isLiveMode ? 'End Call' : 'Talk to AI'}
-                    </span>
-                  </button>
-                  <button 
                     onClick={() => setShowChat(false)}
-                    className={`p-2 rounded-full transition-colors ${currentTheme.isDark ? 'hover:bg-white/10' : 'hover:bg-black/10'}`}
+                    className={`p-2.5 rounded-2xl transition-all shadow-xl border flex items-center justify-center group relative overflow-hidden ${
+                      currentTheme.isDark 
+                        ? 'bg-red-500/10 hover:bg-red-500/30 border-red-500/20 text-red-400' 
+                        : 'bg-red-50 hover:bg-red-100 border-red-200 text-red-600'
+                    }`}
+                    title="Close Assistant"
+                    aria-label="Close Assistant"
                   >
-                    <X className={`w-6 h-6 ${currentTheme.isDark ? 'text-white/60' : 'text-black/60'}`} />
+                    <div className="absolute inset-0 bg-red-500/20 opacity-0 group-hover:opacity-100 animate-pulse transition-opacity" />
+                    <X className="w-5 h-5 sm:w-6 sm:h-6 relative z-10 group-hover:rotate-90 transition-transform duration-300" />
                   </button>
                 </div>
               </div>
@@ -3167,68 +2957,6 @@ export default function App() {
                 )}
               </AnimatePresence>
 
-              {/* Chat Universal Settings Panel */}
-              <AnimatePresence>
-                {showChatSettingsMenu && (
-                  <motion.div 
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    className={`border-b shrink-0 ${currentTheme.isDark ? 'bg-black/60 border-white/5' : 'bg-white/80 border-black/5'} overflow-hidden shadow-2xl relative z-20`}
-                  >
-                    <div className="p-5 grid grid-cols-2 gap-4">
-                      {/* Theme Quick Switch */}
-                      <div className="space-y-2">
-                        <label className={`text-[10px] font-bold uppercase tracking-widest ${currentTheme.isDark ? 'text-white/30' : 'text-black/40'}`}>Appearance</label>
-                        <div className="flex gap-2">
-                          <button 
-                            onClick={() => setThemeKey('black' as ThemeKey)}
-                            className={`flex-1 py-2 px-3 rounded-xl border text-[10px] font-bold transition-all ${themeKey === 'black' ? 'bg-white/10 border-white/20 text-white' : (currentTheme.isDark ? 'border-white/5 text-white/40' : 'border-black/5 text-black/40')}`}
-                          >
-                            Dark Mode
-                          </button>
-                          <button 
-                            onClick={() => setThemeKey('light' as ThemeKey)}
-                            className={`flex-1 py-2 px-3 rounded-xl border text-[10px] font-bold transition-all ${themeKey === 'light' ? 'bg-black/10 border-black/20 text-black' : (currentTheme.isDark ? 'border-white/5 text-white/40' : 'border-black/5 text-black/40')}`}
-                          >
-                            Light Gray
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Chat Actions */}
-                      <div className="space-y-2">
-                        <label className={`text-[10px] font-bold uppercase tracking-widest ${currentTheme.isDark ? 'text-white/30' : 'text-black/40'}`}>Chat Options</label>
-                        <div className="flex gap-2">
-                          <button 
-                            onClick={() => {
-                              if (confirm("Clear all chat history?")) {
-                                setChatMessages(() => []);
-                                chatSessionRef.current = null;
-                                showToast("Chat cleared");
-                              }
-                            }}
-                            className={`flex-1 py-2 px-3 rounded-xl border text-[10px] font-bold flex items-center justify-center gap-1.5 transition-all ${currentTheme.isDark ? 'border-red-500/30 text-red-400 hover:bg-red-500/10' : 'border-red-500/20 text-red-600 hover:bg-red-500/5'}`}
-                          >
-                            <Trash2 className="w-3.5 h-3.5" /> Clear History
-                          </button>
-                          <button 
-                            onClick={() => {
-                              const transcript = chatMessages.map(m => `[${m.role.toUpperCase()}] ${m.parts}`).join('\n\n');
-                              navigator.clipboard.writeText(transcript);
-                              showToast("Chat exported to clipboard");
-                            }}
-                            className={`flex-1 py-2 px-3 rounded-xl border text-[10px] font-bold flex items-center justify-center gap-1.5 transition-all ${currentTheme.isDark ? 'border-blue-500/30 text-blue-400 hover:bg-blue-500/10' : 'border-blue-500/20 text-blue-600 hover:bg-blue-500/5'}`}
-                          >
-                            <Copy className="w-3.5 h-3.5" /> Export Chat
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
               {/* Chat Language Selector */}
               <div className={`px-5 py-2.5 flex items-center gap-3 overflow-x-auto no-scrollbar border-b shrink-0 ${
                 currentTheme.isDark ? 'border-indigo-500/20 bg-indigo-950/40' : 'border-indigo-500/10 bg-indigo-50/50'
@@ -3256,160 +2984,24 @@ export default function App() {
               </div>
 
               <div ref={chatContainerRef} className="flex-1 overflow-y-auto p-4 space-y-6 flex flex-col no-scrollbar">
-                {showLiveSettings && (
-                  <motion.div 
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    className="bg-white/5 border border-white/10 rounded-2xl p-4 mb-4 space-y-4 overflow-hidden shrink-0"
-                  >
-                    <div className="flex justify-between items-center">
-                      <h4 className="text-xs font-bold uppercase tracking-widest text-blue-400">Assistant Voice</h4>
-                      <button onClick={() => setShowLiveSettings(false)} className="text-white/40 hover:text-white transition-colors">
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                      {['Zephyr', 'Puck', 'Charon', 'Kore', 'Fenrir'].map(voice => (
-                        <button 
-                          key={voice}
-                          onClick={() => setLiveVoice(voice)}
-                          className={`py-2 px-3 rounded-xl text-xs font-medium transition-all ${
-                            liveVoice === voice 
-                              ? 'bg-blue-600 text-white' 
-                              : 'bg-white/5 text-white/40 hover:bg-white/10'
-                          }`}
-                        >
-                          {voice}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="pt-2 border-t border-white/5">
-                      <p className="text-[10px] text-white/30 italic">Pick a voice that suits your style. Change takes effect immediately.</p>
-                    </div>
-
-                    <div className="pt-4 border-t border-white/5 space-y-3">
-                      <h4 className="text-xs font-bold uppercase tracking-widest text-orange-400">Response Language</h4>
-                      <div className="grid grid-cols-2 gap-2">
-                        {[
-                          { id: 'auto', label: 'Auto (Detect)', flag: '🌐' },
-                          { id: 'ti', label: 'Tigrinya', flag: '🇪🇷' },
-                          { id: 'am', label: 'Amharic', flag: '🇪🇹' },
-                          { id: 'en', label: 'English', flag: '🇺🇸' }
-                        ].map(lang => (
-                          <button 
-                            key={lang.id}
-                            onClick={() => setLiveLanguage(lang.id)}
-                            className={`py-2.5 px-3 rounded-xl text-xs font-medium flex items-center gap-2 transition-all ${
-                              liveLanguage === lang.id 
-                                ? 'bg-orange-600 text-white shadow-lg shadow-orange-900/40' 
-                                : 'bg-white/5 text-white/40 hover:bg-white/10'
-                            }`}
-                          >
-                            <span>{lang.flag}</span>
-                            <span>{lang.label}</span>
-                          </button>
-                        ))}
-                      </div>
-                      <p className="text-[10px] text-white/30 italic">Force the AI to respond in your preferred language during voice calls.</p>
-                    </div>
-                  </motion.div>
-                )}
-
-                {isLiveMode && (
-                  <div className="flex-1 flex flex-col items-center justify-center space-y-8 animate-in fade-in zoom-in-95 duration-500">
-                    <div className="relative">
-                      {isVisionMode ? (
-                        <div className="relative w-64 h-64 rounded-3xl overflow-hidden border-2 border-blue-500/30 group">
-                          <video 
-                            ref={videoRef}
-                            autoPlay 
-                            playsInline 
-                            muted 
-                            className="w-full h-full object-cover grayscale-[0.5] contrast-[1.2]"
-                          />
-                          <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
-                          <div className="absolute bottom-4 left-4 flex items-center gap-2">
-                            <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
-                            <span className="text-[10px] font-bold uppercase tracking-widest text-blue-100">Live Vision</span>
-                          </div>
-                        </div>
-                      ) : (
-                        <>
-                          <motion.div 
-                            animate={{ scale: [1, 1.2, 1], opacity: [0.3, 0.6, 0.3] }}
-                            transition={{ repeat: Infinity, duration: 2 }}
-                            className="absolute inset-0 bg-rose-500/20 rounded-full blur-2xl"
-                          />
-                          <div className="w-32 h-32 rounded-full bg-rose-500/10 flex items-center justify-center border-2 border-rose-500/30 relative">
-                            <div className="flex gap-1.5 items-end h-8">
-                              {[1, 2, 3, 4, 5].map((i) => (
-                                <motion.div 
-                                  key={i}
-                                  animate={{ height: [10, 32, 15, 25, 10] }}
-                                  transition={{ repeat: Infinity, duration: 0.8, delay: i * 0.1 }}
-                                  className="w-1.5 bg-rose-400 rounded-full"
-                                />
-                              ))}
-                            </div>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                    <div className="text-center space-y-3">
-                      <h4 className="text-2xl font-bold text-white tracking-tight">
-                        {isVisionMode ? 'AI is Watching' : 'Assistant is Listening'}
-                      </h4>
-                      <p className="text-white/40 text-sm italic max-w-[250px]">
-                        {isVisionMode 
-                          ? '"Show me something, I can see and describe it in Tigrinya!"'
-                          : '"I am here. speak to me in Tigrinya or English..."'}
-                      </p>
-                    </div>
-                    
-                    {liveTranscript && (
-                      <motion.div 
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="bg-white/5 border border-white/10 p-5 rounded-3xl max-w-sm"
-                      >
-                        <p className="text-sm text-blue-100 leading-relaxed italic">
-                          {liveTranscript}
-                        </p>
-                      </motion.div>
-                    )}
-
-                    <div className="flex items-center gap-6 mt-8 p-3 rounded-full bg-black/10 backdrop-blur-md border border-white/5">
-                      <button 
-                         onClick={() => setIsVisionMode(!isVisionMode)}
-                         className={`p-3 rounded-full transition-all ${isVisionMode ? 'bg-blue-500/20 text-blue-300' : 'text-white/60 hover:text-white'}`}
-                         title="Toggle Vision"
-                      >
-                        <Camera className="w-6 h-6" />
-                      </button>
-                      <button 
-                        onClick={() => setIsLiveMode(false)}
-                        className="p-4 rounded-full bg-rose-600 text-white shadow-xl shadow-rose-900/40 hover:scale-105 transition-all"
-                        title="End Call"
-                      >
-                        <X className="w-8 h-8" />
-                      </button>
-                      <button 
-                         onClick={() => setShowLiveSettings(prev => !prev)}
-                         className="p-3 rounded-full text-white/60 hover:text-white transition-all"
-                         title="Settings"
-                      >
-                        <Settings2 className="w-6 h-6" />
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {chatMessages.length === 0 && !isLiveMode && (
+                {chatMessages.length === 0 && (
                   <div className="flex-1 flex flex-col items-center justify-center text-center px-8 space-y-6">
-                    <div className="w-20 h-20 rounded-full bg-blue-500/10 flex items-center justify-center border border-blue-500/20">
-                      <Sparkles className="w-10 h-10 text-blue-400 opacity-40" />
-                    </div>
+                    <motion.div 
+                      className="w-20 h-20 rounded-full bg-blue-500/10 flex items-center justify-center border border-blue-500/20"
+                      animate={{ 
+                        boxShadow: ['0 0 0px rgba(59,130,246,0)', '0 0 20px rgba(59,130,246,0.2)', '0 0 0px rgba(59,130,246,0)']
+                      }}
+                      transition={{ duration: 3, repeat: Infinity }}
+                    >
+                      <motion.div
+                        animate={{ 
+                          color: ['#60a5fa', '#a78bfa', '#f472b6', '#60a5fa'],
+                        }}
+                        transition={{ duration: 4, repeat: Infinity }}
+                      >
+                        <Sparkles className="w-10 h-10 transition-colors" />
+                      </motion.div>
+                    </motion.div>
                     <div className="space-y-2">
                       <h4 className="text-xl font-bold text-white">How can I help you?</h4>
                       <p className="text-white/40 text-sm max-w-[280px]">Ask me anything in Tigrinya, Amharic or English. I can translate, write stories, or fix grammar.</p>
@@ -3440,7 +3032,7 @@ export default function App() {
                       <div className={`w-8 h-8 rounded-full shrink-0 flex items-center justify-center text-[10px] font-bold ${msg.role === 'user' ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30 shadow-[0_0_15px_rgba(249,115,22,0.1)]' : 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 shadow-[0_0_15px_rgba(99,102,241,0.1)]'}`}>
                         {msg.role === 'user' ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
                       </div>
-                      <div className={`p-4 rounded-2xl text-sm leading-relaxed shadow-lg relative group ${
+                      <div className={`p-4 rounded-2xl text-xs sm:text-sm leading-relaxed shadow-lg relative group ${
                         msg.role === 'user' 
                           ? 'bg-blue-600 text-white rounded-tr-none shadow-blue-900/20' 
                           : (currentTheme.isDark 
@@ -3462,9 +3054,8 @@ export default function App() {
                             </button>
                             <button
                               onClick={() => {
-                                if (confirm("Delete this message?")) {
-                                  setChatMessages(prev => prev.filter((_, idx) => idx !== originIndex));
-                                }
+                                setChatMessages(prev => prev.filter((_, idx) => idx !== originIndex));
+                                showToast("Message deleted");
                               }}
                               className="p-2 rounded-full w-8 h-8 flex items-center justify-center bg-white/10 hover:bg-red-500/50 text-white shadow-lg backdrop-blur"
                               title="Delete Message"
@@ -3657,7 +3248,7 @@ export default function App() {
                           </details>
                         )}
 
-                        <div className={`p-4 rounded-2xl text-sm leading-relaxed shadow-lg rounded-tl-none ${
+                        <div className={`p-4 rounded-2xl text-xs sm:text-sm leading-relaxed shadow-lg rounded-tl-none ${
                           currentTheme.isDark 
                             ? 'bg-indigo-900/30 border border-indigo-500/30 text-indigo-50' 
                             : 'bg-white border border-slate-200 text-slate-800 shadow-sm'
@@ -3740,7 +3331,15 @@ export default function App() {
                           : 'bg-white border-slate-200 text-slate-600 hover:bg-indigo-50 hover:border-indigo-200 hover:text-indigo-600'
                       }`}
                     >
-                      <Sparkles className="w-3.5 h-3.5 opacity-40 group-hover:opacity-100 transition-opacity" />
+                      <motion.div
+                        animate={{ 
+                          color: ['#60a5fa', '#a78bfa', '#f472b6', '#fbbf24', '#60a5fa'],
+                        }}
+                        transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
+                        className="flex items-center"
+                      >
+                        <Sparkles className="w-3.5 h-3.5 opacity-80 group-hover:opacity-100 transition-opacity" />
+                      </motion.div>
                       {suggestion}
                     </button>
                   ))}
@@ -3757,7 +3356,7 @@ export default function App() {
                       initial={{ x: '100%' }}
                       animate={{ x: 0 }}
                       exit={{ x: '100%' }}
-                      className={`fixed top-0 right-0 w-80 h-full z-50 flex flex-col shadow-2xl border-l backdrop-blur-3xl overflow-hidden ${
+                    className={`fixed top-0 right-0 w-[90%] sm:w-80 md:w-96 h-full z-50 flex flex-col shadow-2xl border-l backdrop-blur-3xl overflow-hidden ${
                         currentTheme.isDark ? 'bg-slate-900/95 border-white/10' : 'bg-white/95 border-black/10'
                       }`}
                     >
@@ -3822,39 +3421,309 @@ export default function App() {
                     Listening: {interimTranscript}...
                   </div>
                 )}
-                <div className={`flex items-center gap-3 border rounded-full p-1 pl-5 pr-2 focus-within:border-indigo-400/50 transition-all ${
-                  currentTheme.isDark ? 'bg-white/5 border-white/10' : 'bg-black/5 border-black/10'
-                }`}>
-                  <input 
-                    type="text" 
-                    value={chatInput}
-                    onChange={(e) => setChatInput(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleSendChatMessage()}
-                    placeholder="Ask AI Pro Assistant..."
-                    className={`flex-1 bg-transparent border-none focus:ring-0 text-sm py-3 font-ethiopic ${
-                      currentTheme.isDark ? 'text-white placeholder:text-white/20' : 'text-slate-900 placeholder:text-slate-400'
-                    }`}
-                  />
-                  <button 
-                    onClick={() => toggleListening('chat')}
-                    className={`p-2 rounded-xl transition-all ${isListening && listeningTarget === 'chat' ? 'bg-rose-500 text-white animate-pulse shadow-lg shadow-rose-500/20' : (currentTheme.isDark ? 'text-white/40 hover:text-white/60 hover:bg-white/5' : 'text-slate-400 hover:text-slate-600 hover:bg-black/5')}`}
-                    title="Voice Input"
-                  >
-                    <Mic className="w-5 h-5" />
-                  </button>
-                  <button 
-                    onClick={handleSendChatMessage}
-                    disabled={!chatInput.trim() || isAssistantTyping}
-                    className={`p-2 rounded-xl transition-all ${chatInput.trim() ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-500/20' : (currentTheme.isDark ? 'bg-white/5 text-white/20' : 'bg-black/5 text-black/20')}`}
-                  >
-                    <Send className="w-5 h-5" />
-                  </button>
-                </div>
+                <AnimatePresence>
+                  {isLiveMode && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 20 }}
+                      className="absolute inset-x-0 bottom-full mb-4 px-4 pb-4 z-50"
+                    >
+                      <div className={`rounded-3xl border shadow-2xl overflow-hidden backdrop-blur-2xl ${
+                        currentTheme.isDark ? 'bg-slate-900/90 border-amber-500/30' : 'bg-white/95 border-amber-200 shadow-amber-500/10'
+                      }`}>
+                         {/* Visualizer Area */}
+                         <div className="h-32 flex flex-col items-center justify-center relative overflow-hidden bg-gradient-to-b from-transparent to-black/10">
+                            {/* Waves */}
+                            <div className="flex items-center gap-1 h-12">
+                               {[...Array(16)].map((_, i) => (
+                                 <motion.div
+                                   key={i}
+                                   animate={{
+                                     height: isAiSpeaking || liveTranscript ? [12, Math.random() * 40 + 12, 12] : 4,
+                                   }}
+                                   transition={{
+                                     duration: 0.8,
+                                     repeat: Infinity,
+                                     delay: i * 0.04
+                                   }}
+                                   className={`w-1 rounded-full ${isAiSpeaking ? 'bg-indigo-400/60' : 'bg-blue-400/60'}`}
+                                 />
+                               ))}
+                            </div>
+                            
+                            <div className="absolute top-4 left-4 flex items-center gap-2">
+                               <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                               <span className="text-[10px] font-bold uppercase tracking-widest text-amber-500/80">Live Connection</span>
+                            </div>
+
+                            <button 
+                                onClick={stopLiveSession}
+                                className="absolute top-4 right-4 p-2 rounded-full hover:bg-black/10 transition-colors"
+                            >
+                                <X className="w-5 h-5 opacity-40 hover:opacity-100" />
+                            </button>
+                         </div>
+
+                         {/* Transcription Area */}
+                         <div className="p-6 space-y-4 max-h-64 overflow-y-auto no-scrollbar">
+                            {liveTranscript && (
+                                <motion.div 
+                                    initial={{ opacity: 0, x: -10 }}
+                                    animate={{ opacity: 1, x: 0 }}
+                                    className="flex gap-3 items-start"
+                                >
+                                    <div className="w-10 h-10 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center shrink-0">
+                                        <User className="w-5 h-5 text-indigo-400" />
+                                    </div>
+                                    <div className="flex-1 space-y-1">
+                                        <p className="text-[10px] font-black uppercase tracking-widest text-indigo-400 opacity-60">You</p>
+                                        <p className="text-xl font-ethiopic leading-snug font-medium text-white/90">{liveTranscript}</p>
+                                    </div>
+                                </motion.div>
+                            )}
+                            
+                            {liveResponseTranscript && (
+                                <motion.div 
+                                    initial={{ opacity: 0, x: 10 }}
+                                    animate={{ opacity: 1, x: 0 }}
+                                    className="flex gap-3 items-start pt-4 border-t border-black/5"
+                                >
+                                    <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 border shadow-lg ${currentTheme.isDark ? 'bg-rose-500/10 border-rose-500/30' : 'bg-rose-50 border-rose-200'}`}>
+                                        <Bot className="w-5 h-5 text-rose-500" />
+                                    </div>
+                                    <div className="flex-1 space-y-1">
+                                        <p className="text-[10px] font-black uppercase tracking-widest text-rose-500 opacity-60">Gemini Live</p>
+                                        <div className={`text-xl font-ethiopic leading-relaxed font-medium ${currentTheme.isDark ? 'text-white' : 'text-slate-900'}`}>
+                                            {liveResponseTranscript}
+                                        </div>
+                                    </div>
+                                </motion.div>
+                            )}
+                            
+                            {!liveTranscript && !liveResponseTranscript && (
+                                <div className="text-center py-8 opacity-20">
+                                    <p className="text-xs font-bold uppercase tracking-widest">Listening for your voice...</p>
+                                </div>
+                            )}
+                         </div>
+
+                         {/* Action Footer with Controls */}
+                         <div className={`p-4 border-t flex flex-col gap-4 ${currentTheme.isDark ? 'border-white/5 bg-black/20' : 'border-black/5 bg-slate-50/50'}`}>
+                              <div className="flex gap-2">
+                                <select 
+                                    value={voice} 
+                                    onChange={(e) => setVoice(e.target.value)}
+                                    className={`flex-1 p-2 rounded-xl text-xs font-bold uppercase ${currentTheme.isDark ? 'bg-white/5 text-white' : 'bg-slate-200 text-slate-800'}`}
+                                >
+                                    {Array.from({length: 10}).map((_, i) => (
+                                      <option key={i} value={`Voice-${i + 1}`}>Smart Voice {i + 1}</option>
+                                    ))}
+                                </select>
+                                <div className={`flex items-center gap-2 p-2 rounded-xl ${currentTheme.isDark ? 'bg-white/5' : 'bg-slate-200'}`}>
+                                    <span className="text-[10px] text-white/50">Rate</span>
+                                    <input 
+                                        type="range" 
+                                        min="0.5" max="2" step="0.1" 
+                                        value={speechRate} 
+                                        onChange={(e) => setSpeechRate(parseFloat(e.target.value))}
+                                        className="w-20"
+                                    />
+                                    <span className="text-xs text-white p-1">{speechRate}</span>
+                                </div>
+                              </div>
+                              
+                              <button 
+                                onClick={stopLiveSession}
+                                className="w-full px-6 py-2 rounded-full bg-rose-500 text-white text-xs font-bold uppercase tracking-widest shadow-lg shadow-rose-500/20 hover:scale-105 active:scale-95 transition-all"
+                              >
+                                End Live Talk
+                              </button>
+                         </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
+
+              <div className={`p-3 sm:p-4 border-t backdrop-blur-3xl shrink-0 ${
+                  currentTheme.isDark ? 'bg-indigo-950/60 border-indigo-500/20' : 'bg-white/80 border-slate-200'
+                }`}>
+                  {/* Device-aware Action Buttons: Stack on mobile, side-by-side on desktop */}
+                  <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 mb-3">
+                  </div>
+
+                  <div className={`flex items-center gap-2 border rounded-[2rem] p-1.5 focus-within:ring-2 focus-within:ring-indigo-500/30 transition-all ${
+                    currentTheme.isDark ? 'bg-white/5 border-white/10' : 'bg-black/5 border-black/10'
+                  }`}>
+                    <input 
+                      type="text" 
+                      value={chatInput}
+                      onChange={(e) => setChatInput(e.target.value)}
+                      onSelect={(e: any) => setChatCursorIndex(e.target.selectionStart)}
+                      onFocus={() => setKeyboardTarget('chat')}
+                      onKeyDown={(e) => e.key === 'Enter' && handleSendChatMessage()}
+                      placeholder="Ask anything in Ge'ez..."
+                      className={`flex-1 bg-transparent border-none focus:ring-0 text-fluid-ethiopic py-3 font-ethiopic ${
+                        currentTheme.isDark ? 'text-white placeholder:text-white/20' : 'text-slate-900 placeholder:text-slate-400'
+                      }`}
+                    />
+
+                    <div className="flex items-center gap-1.5 pr-1.5">
+                     <button 
+                         onClick={() => fileInputRef.current?.click()}
+                         className={`flex-none p-2.5 rounded-xl transition-all ${currentTheme.isDark ? 'hover:bg-white/5 text-white/40' : 'hover:bg-black/5 text-slate-400'}`}
+                         title="Upload Attachment"
+                         onDragOver={(e) => e.preventDefault()}
+                         onDrop={(e) => {
+                           e.preventDefault();
+                           handleFileUpload(e.dataTransfer.files);
+                         }}
+                       >
+                         <Image className="w-5 h-5" />
+                         <input type="file" ref={fileInputRef} onChange={(e) => handleFileUpload(e.target.files)} className="hidden" multiple accept="image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+                       </button>
+
+                      <button 
+                        onClick={() => toggleListening('chat')}
+                        className={`flex-none p-2.5 rounded-xl transition-all ${isListening && listeningTarget === 'chat' ? 'bg-rose-500 text-white animate-pulse' : (currentTheme.isDark ? 'hover:bg-white/5 text-white/40' : 'hover:bg-black/5 text-slate-400')}`}
+                        title="Voice Input"
+                      >
+                        <Mic className="w-5 h-5" />
+                      </button>
+
+                      <button 
+                        onClick={isLiveMode ? stopLiveSession : startLiveSession}
+                        className={`flex-none p-2.5 rounded-xl transition-all ${isLiveMode ? 'bg-rose-500 text-white animate-pulse' : (currentTheme.isDark ? 'hover:bg-white/5 text-white/40' : 'hover:bg-black/5 text-slate-400')}`}
+                        title="Live Talk"
+                      >
+                        <Sparkles className="w-5 h-5" />
+                      </button>
+
+                      <button 
+                        onClick={() => {
+                          setShowChatKeyboard(!showChatKeyboard);
+                          if (!showChatKeyboard) setKeyboardTarget('chat');
+                        }}
+                        className={`p-2.5 rounded-xl transition-all ${showChatKeyboard ? 'bg-indigo-500 text-white' : (currentTheme.isDark ? 'text-white/30 hover:bg-white/5' : 'text-slate-400 hover:bg-black/5')}`}
+                        title="Ge'ez Keyboard"
+                      >
+                        <Keyboard className="w-5 h-5" />
+                      </button>
+
+                      <button 
+                        onClick={handleSendChatMessage}
+                        disabled={!chatInput.trim() || isAssistantTyping}
+                        className={`p-2.5 rounded-full transition-all shadow-md active:scale-90 ${
+                          chatInput.trim() 
+                            ? 'bg-indigo-500 text-white shadow-indigo-500/30' 
+                            : (currentTheme.isDark ? 'bg-white/5 text-white/10' : 'bg-black/5 text-black/10')
+                        }`}
+                      >
+                        <Send className="w-5 h-5" />
+                      </button>
+                    </div>
+                  </div>
+
+                {/* Integrated Chat Keyboard */}
+                <AnimatePresence>
+                  {showChatKeyboard && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      className="overflow-hidden border-t border-white/10 mt-1"
+                    >
+                      {renderKeyboardUI(true)}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+
+              {/* Chat History Panel */}
+              <AnimatePresence>
+                {activeMenus.history && (
+                  <motion.div
+                    initial={{ opacity: 0, x: '100%' }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: '100%' }}
+                    className={`absolute top-1 right-1 bottom-1 w-[88%] sm:w-80 md:w-96 z-[600] border rounded-2xl flex flex-col shadow-2xl ${
+                      currentTheme.isDark ? 'bg-slate-900/95 border-white/10' : 'bg-slate-50 border-black/10'
+                    }`}
+                  >
+                    <div className={`p-4 border-b flex items-center justify-between ${currentTheme.isDark ? 'border-white/10' : 'border-black/5'}`}>
+                      <h3 className={`font-bold ${currentTheme.isDark ? 'text-white' : 'text-slate-900'}`}>Chat History</h3>
+                      <button onClick={() => toggleMenu('history')} className="p-1 hover:bg-white/10 rounded-lg transition-colors">
+                        <X className={`w-5 h-5 ${currentTheme.isDark ? 'text-white/60' : 'text-slate-500'}`}/>
+                      </button>
+                    </div>
+                    
+                    <div className="flex-1 overflow-y-auto p-3 space-y-2 custom-scrollbar">
+                      <button
+                        onClick={() => {
+                          startNewChatSession();
+                          toggleMenu('history');
+                        }}
+                        className={`w-full p-3 rounded-xl flex items-center gap-3 text-left transition-all font-medium border border-dashed ${
+                          currentTheme.isDark 
+                            ? 'bg-white/5 border-white/20 hover:bg-white/10 text-white' 
+                            : 'bg-black/5 border-black/20 hover:bg-black/10 text-slate-800'
+                        }`}
+                      >
+                        <Plus className="w-4 h-4" />
+                        New Chat Session
+                      </button>
+
+                      {chatSessions.map((session) => (
+                        <div key={session.id} className="group relative flex items-center">
+                          <button
+                            onClick={() => {
+                              setActiveSessionId(session.id);
+                              toggleMenu('history');
+                            }}
+                            className={`flex-1 p-3 rounded-xl text-left transition-all ${
+                              activeSessionId === session.id
+                                ? 'bg-blue-500 text-white shadow-md'
+                                : currentTheme.isDark
+                                  ? 'hover:bg-white/5 text-white/80'
+                                  : 'hover:bg-black/5 text-slate-800'
+                            }`}
+                          >
+                            <div className="font-semibold text-sm truncate pr-8">{session.title}</div>
+                            <div className={`text-xs mt-1 ${activeSessionId === session.id ? 'text-blue-100' : 'opacity-50'}`}>
+                              {session.messages.length} messages
+                            </div>
+                          </button>
+                          {chatSessions.length > 1 && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const updatedSessions = chatSessions.filter(s => s.id !== session.id);
+                                setChatSessions(updatedSessions);
+                                if (activeSessionId === session.id) {
+                                  setActiveSessionId(updatedSessions[0].id);
+                                }
+                                showToast('Chat deleted');
+                              }}
+                              className={`absolute right-2 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-all ${
+                                activeSessionId === session.id ? 'hover:bg-white/20 text-white' : 'hover:bg-rose-500/10 text-rose-500'
+                              }`}
+                            >
+                              <Trash className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
               </div>
             </motion.div>
           )}
         </AnimatePresence>
+      </motion.div>
     </div>
   );
 }

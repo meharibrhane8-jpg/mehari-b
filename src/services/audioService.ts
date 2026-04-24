@@ -6,7 +6,8 @@ let sharedAudioContext: AudioContext | null = null;
 
 export const getAudioContext = (): AudioContext => {
   if (!sharedAudioContext) {
-    sharedAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+    sharedAudioContext = new AudioContextClass({ sampleRate: 24000 });
   }
   
   // Ensure the context is resumed (browsers often suspend until first user interaction)
