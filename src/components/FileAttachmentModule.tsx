@@ -485,11 +485,11 @@ export const FileAttachmentModule: React.FC<FileAttachmentModuleProps> = ({
             className={`p-2 rounded-full transition-all duration-200 flex items-center justify-center ${
               showOptions || attachedFiles.length > 0
                 ? "bg-indigo-500/20 text-indigo-400" 
-                : (currentTheme.isDark ? "text-white/30 hover:bg-white/5 hover:text-white" : "text-slate-400 hover:bg-slate-100 hover:text-slate-700")
+                : (currentTheme.isDark ? "text-white/40 hover:bg-white/10 hover:text-white" : "text-slate-400 hover:bg-slate-100 hover:text-slate-700")
             }`}
             title="Add tools (Files, Camera, Models)"
           >
-            <Plus className="w-4 h-4" />
+            <Plus className="w-5 h-5" />
           </button>
 
           {/* ATTACH OPTIONS EXPANDABLE POPOVER */}
@@ -547,28 +547,6 @@ export const FileAttachmentModule: React.FC<FileAttachmentModuleProps> = ({
               >
                 <FileIcon className="w-4 h-4 text-emerald-500" />
                 <span>Upload Local File</span>
-              </button>
-
-              <button 
-                type="button"
-                onClick={() => { setShowCameraModal(true); setShowOptions(false); }}
-                className={`px-4 py-2.5 flex items-center gap-3 text-sm transition-all text-left ${
-                  currentTheme.isDark ? "hover:bg-white/5" : "hover:bg-slate-50"
-                }`}
-              >
-                <Camera className="w-4 h-4 text-sky-400" />
-                <span>Camera Capture</span>
-              </button>
-
-              <button 
-                type="button"
-                onClick={() => { setShowDriveModal(true); setShowOptions(false); }}
-                className={`px-4 py-2.5 flex items-center gap-3 text-sm transition-all text-left ${
-                  currentTheme.isDark ? "hover:bg-white/5" : "hover:bg-slate-50"
-                }`}
-              >
-                <Folder className="w-4 h-4 text-amber-500" />
-                <span>Google Drive File</span>
               </button>
             </div>
           )}
@@ -822,7 +800,7 @@ export const FileAttachmentModule: React.FC<FileAttachmentModuleProps> = ({
                             <div className="flex-1 min-w-0">
                               <h5 className="font-semibold text-sm truncate">{driveFile.name}</h5>
                               <p className="text-[10px] text-zinc-500 font-mono mt-0.5">
-                                {driveFile.mimeType.split(".").pop()} {driveFile.size ? `• ${bytesToSize(driveFile.size)}` : ""}
+                                {(driveFile.mimeType || "").split(".").pop()} {driveFile.size ? `• ${bytesToSize(driveFile.size)}` : ""}
                               </p>
                             </div>
 

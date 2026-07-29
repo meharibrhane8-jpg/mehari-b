@@ -19,10 +19,14 @@ import {
   Check, 
   ChevronDown,
   Volume2,
-  Loader2
+  Loader2,
+  Repeat,
+  Square
 } from 'lucide-react';
 import { AI_MODES_LIST } from './AiModesManager';
+import { VoicePreviewGallery } from './VoicePreviewGallery';
 import { getAccessToken } from '../services/firebaseAuthService';
+import { setAudioPlaybackRate, setAudioLoopState, stopAllAudio } from '../services/audioService';
 
 interface SettingsDrawerProps {
   isOpen: boolean;
@@ -48,7 +52,7 @@ interface SettingsDrawerProps {
   onMicSelect: (deviceId: string) => void;
   selectedMic: string;
   availableMicrophones: MediaDeviceInfo[];
-  onPreviewVoice?: (modeId: string, gender: 'female' | 'male', previewText: string, specificVoiceName?: string) => void;
+  onPreviewVoice?: (modeId: string, gender: 'female' | 'male', previewText: string, specificVoiceName?: string, loop?: boolean, speedRate?: number) => void;
   isPreviewing?: boolean;
   previewingModeId?: string | null;
   previewingGender?: 'female' | 'male' | null;
@@ -122,26 +126,50 @@ export const SettingsDrawer = ({
   const [showVoiceMenu, setShowVoiceMenu] = useState(false);
   const [showMicMenu, setShowMicMenu] = useState(false);
   const [showModelMenu, setShowModelMenu] = useState(false);
+  const [isLooping, setIsLooping] = useState(false);
   
   const handleSelectVoice = (name: string, gender: 'female' | 'male') => {
     onSelectSpeaker(name);
     onSelectGender(gender);
   };
 
+  const toggleLooping = () => {
+    const nextVal = !isLooping;
+    setIsLooping(nextVal);
+    setAudioLoopState(nextVal);
+  };
+
+  const handleSpeedChange = (newSpeed: number) => {
+    onSpeedChange(newSpeed);
+    setAudioPlaybackRate(newSpeed);
+  };
+
   const handlePreviewClick = (e: React.MouseEvent, voice: any) => {
     e.stopPropagation();
     if (onPreviewVoice) {
-      onPreviewVoice(activeAiMode || 'default', voice.gender, t('voicePreview'), voice.name);
+      onPreviewVoice(
+        activeAiMode || 'default', 
+        voice.gender, 
+        t('voicePreview'), 
+        voice.name, 
+        isLooping, 
+        speed
+      );
     }
   };
 
   const VOICES = [
-    { name: 'Kore', gender: 'female' as const, desc: 'Clear Female - Best Default Voice' },
-    { name: 'Aoede', gender: 'female' as const, desc: 'Soothing & Calm Female' },
+    { name: 'Selam', gender: 'female' as const, desc: 'Traditional Ge\'ez Cadence Female' },
+    { name: 'Senait', gender: 'female' as const, desc: 'Young & Vibrant Tigrinya Female' },
+    { name: 'Robel', gender: 'male' as const, desc: 'Energetic & Youthful Tigrinya Male' },
+    { name: 'Aman', gender: 'male' as const, desc: 'Formal & Authoritative News Anchor Male' },
+    { name: 'Kidane', gender: 'male' as const, desc: 'Traditional Ge\'ez Scholar Male' },
+    { name: 'Yohannes', gender: 'male' as const, desc: 'Storyteller & Documentary Narrator Male' },
+    { name: 'Kore', gender: 'female' as const, desc: 'Clear Female - Standard Voice' },
+    { name: 'Aoede', gender: 'female' as const, desc: 'Soothing & Melodic Female' },
     { name: 'Charon', gender: 'male' as const, desc: 'Deep & Serious Male' },
-    { name: 'Puck', gender: 'male' as const, desc: 'Energetic Male' },
-    { name: 'Fenrir', gender: 'male' as const, desc: 'Professional Business Male' },
-    { name: 'Selam', gender: 'female' as const, desc: 'Tigrinya Optimized Voice (Ge\'ez Cadence)' }
+    { name: 'Puck', gender: 'male' as const, desc: 'Energetic Modern Male' },
+    { name: 'Fenrir', gender: 'male' as const, desc: 'Professional Business Male' }
   ];
 
   return (
@@ -179,7 +207,7 @@ export const SettingsDrawer = ({
                 </div>
                 <div>
                   <h3 className="text-sm font-black tracking-tight font-sans">{t('settings')}</h3>
-                  <p className="text-[10px] opacity-60">{t('subtitle')}</p>
+                  {t('subtitle') && <p className="text-[10px] opacity-60">{t('subtitle')}</p>}
                 </div>
               </div>
               <button 
@@ -361,6 +389,8 @@ export const SettingsDrawer = ({
                     </div>
                   </div>
 
+
+
                   {/* Voice Selector Dropdown */}
                   <div className="flex flex-col gap-2 relative">
                     <div className="flex justify-between items-center">
@@ -444,6 +474,8 @@ export const SettingsDrawer = ({
                     </div>
                   </div>
 
+
+
                   {/* Speed Section */}
                   <div className="flex flex-col gap-2">
                     <div className="flex justify-between items-center">
@@ -457,7 +489,7 @@ export const SettingsDrawer = ({
                         max="2.0" 
                         step="0.1" 
                         value={speed}
-                        onChange={(e) => onSpeedChange(parseFloat(e.target.value))}
+                        onChange={(e) => handleSpeedChange(parseFloat(e.target.value))}
                         className="w-full h-1.5 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-600 focus:outline-none" 
                       />
                       <div className="flex justify-between text-[8px] opacity-40 px-1 font-mono tracking-wider">
@@ -535,66 +567,7 @@ export const SettingsDrawer = ({
 
 
 
-              {/* Account / Google Sign In */}
-              <div className="flex flex-col gap-3 mb-6">
-                <span className="text-xs font-black uppercase tracking-wider opacity-50 font-sans">Account & Security</span>
-                <div className={`flex flex-col gap-3 p-4 rounded-2xl border ${
-                  currentTheme.isDark ? 'border-white/10 bg-white/5' : 'border-slate-200 bg-slate-50'
-                }`}>
-                  <div className="flex items-center gap-3">
-                    <CheckCircle2 className={`w-4 h-4 ${currentUser ? 'text-green-500' : 'text-slate-400'}`} />
-                    <div className="flex flex-col">
-                      <span className="text-sm font-bold">Google Workspace Access</span>
-                      <span className="text-[10px] opacity-60">
-                        {currentUser ? `Connected as ${currentUser.email}` : 'Sign in to access Drive, Tasks, and Calendar securely'}
-                      </span>
-                    </div>
-                  </div>
-                  {currentUser ? (
-                    <div className="flex flex-col gap-2 w-full">
-                      {!getAccessToken() && (
-                        <button
-                          onClick={onSignIn}
-                          className="w-full py-2.5 px-3.5 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
-                        >
-                          Authorize Google Workspace
-                        </button>
-                      )}
-                      {typeof window !== 'undefined' && window.self !== window.top && !getAccessToken() && (
-                        <button
-                          onClick={() => window.open(window.location.href, '_blank')}
-                          className="w-full py-2.5 px-3.5 rounded-xl text-xs font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 transition-colors flex items-center justify-center gap-2"
-                        >
-                          ↗️ Open in New Tab to Authorize
-                        </button>
-                      )}
-                      <button
-                        onClick={onSignOut}
-                        className="w-full py-2.5 px-3.5 rounded-xl text-xs font-bold text-rose-500 bg-rose-500/10 hover:bg-rose-500/20 transition-colors flex items-center justify-center gap-2"
-                      >
-                        Sign Out
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col gap-2 w-full">
-                      <button
-                        onClick={onSignIn}
-                        className="w-full py-2.5 px-3.5 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
-                      >
-                        Sign In with Google
-                      </button>
-                      {typeof window !== 'undefined' && window.self !== window.top && (
-                        <button
-                          onClick={() => window.open(window.location.href, '_blank')}
-                          className="w-full py-2.5 px-3.5 rounded-xl text-xs font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 transition-colors flex items-center justify-center gap-2"
-                        >
-                          ↗️ Open in New Tab to Sign In
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
+
               {/* Preferences */}
               <div className="flex flex-col gap-3">
                 <span className="text-xs font-black uppercase tracking-wider opacity-50 font-sans">{t('preferences')}</span>

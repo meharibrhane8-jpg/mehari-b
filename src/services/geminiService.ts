@@ -44,10 +44,15 @@ const triggerQuotaSuccessEvent = () => {
  */
 export const callGeminiAPI = async (model: string, contents: any, config?: any) => {
   const fetchFn = async () => {
+    const aiModelMode = config?.aiModelMode;
+    const cleanConfig = config ? { ...config } : {};
+    if (cleanConfig && 'aiModelMode' in cleanConfig) {
+      delete cleanConfig.aiModelMode;
+    }
     const response = await fetch("/api/gemini/generateContent", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model, contents, config }),
+      headers: { "Content-Type": "application/json", "Accept": "application/json" },
+      body: JSON.stringify({ model, contents, config: cleanConfig, aiModelMode }),
     });
 
     if (!response.ok) {
@@ -68,9 +73,11 @@ export const callGeminiAPI = async (model: string, contents: any, config?: any) 
       throw err;
     }
 
+    const rawText = await response.text();
     try {
-      return await response.json();
+      return rawText ? JSON.parse(rawText) : {};
     } catch (err) {
+      console.error("Failed to parse JSON response. Raw text:", rawText.slice(0, 500));
       throw new Error("Invalid response format received from server.");
     }
   };
@@ -119,7 +126,7 @@ export const callGeminiAPI = async (model: string, contents: any, config?: any) 
 export const callGeminiImageAPI = async (model: string, prompt: string, config?: any) => {
   const response = await fetch("/api/gemini/generateImages", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "Accept": "application/json" },
     body: JSON.stringify({ model, prompt, config }),
   });
 
@@ -173,7 +180,7 @@ export const sendMessageStreamToAI = async function*(chatOrHistory: any, message
   const connectAndStream = async () => {
     const response = await fetch("/api/gemini/chatStream", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Accept": "application/json" },
       body: JSON.stringify({ history, message, systemInstruction, aiModelMode }),
     });
 
@@ -275,12 +282,12 @@ export const sendMessageStreamToAI = async function*(chatOrHistory: any, message
 /**
  * Text-to-Speech Generation Proxy
  */
-export const generateTTS = async (text: string, voiceName: string = 'Kore', model?: string): Promise<string | null> => {
+export const generateTTS = async (text: string, voiceName: string = 'Kore', model?: string, systemInstruction?: string, speed?: number, pitch?: number): Promise<string | null> => {
   try {
     const response = await fetch("/api/gemini/tts", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, voiceName, model }),
+      headers: { "Content-Type": "application/json", "Accept": "application/json" },
+      body: JSON.stringify({ text, voiceName, model, systemInstruction, speed, pitch }),
     });
 
     if (response.status === 429) {
@@ -299,6 +306,29 @@ export const generateTTS = async (text: string, voiceName: string = 'Kore', mode
       throw err; // Propagate specific error
     }
     return null;
+  }
+};
+
+/**
+ * Tigrinya-specific text refinement for TTS
+ */
+export const refineTigrinya = async (text: string, language: 'ti' | 'am' = 'ti'): Promise<string> => {
+  try {
+    const response = await fetch("/api/gemini/refine", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Accept": "application/json" },
+      body: JSON.stringify({ text, language }),
+    });
+
+    if (!response.ok) {
+      throw new Error("Refine request failed");
+    }
+
+    const data = await response.json();
+    return data.refinedText || text;
+  } catch (err) {
+    console.error("Refine failed:", err);
+    return text;
   }
 };
 
@@ -335,13 +365,11 @@ export const connectToLiveAPI = (callbacks: LiveCallbacks, systemInstruction?: s
   socket.onmessage = async (event) => {
     try {
       const message = JSON.parse(event.data);
-      
-      if (message.error) {
+      if (callbacks.onmessage) {
+        callbacks.onmessage(message);
+      } else if (message.error) {
         callbacks.onerror(message.error + (message.details ? ": " + message.details : ""));
-        return;
       }
-      
-      callbacks.onmessage(message);
     } catch (e) {
       console.error("WS client onmessage error processing JSON:", e);
     }
@@ -404,7 +432,7 @@ Chat History (Recent Context):
 ${historyText}`;
 
   try {
-    const result = await callGeminiAPI("gemini-3.5-flash", [{ role: 'user', parts: [{ text: prompt }] }], {
+    const result = await callGeminiAPI("gemini-2.5-flash", [{ role: 'user', parts: [{ text: prompt }] }], {
       responseMimeType: "application/json"
     });
 
@@ -431,7 +459,7 @@ ${historyText}`;
  */
 export const refineText = async (text: string, instruction: string): Promise<string> => {
   try {
-    const result = await callGeminiAPI("gemini-3.5-flash", [{ role: 'user', parts: [{ text: `${instruction}\n\nText: "${text}"` }] }]);
+    const result = await callGeminiAPI("gemini-2.5-flash", [{ role: 'user', parts: [{ text: `${instruction}\n\nText: "${text}"` }] }]);
     return result.text || text;
   } catch (err) {
     console.error("Text refinement failed:", err);
@@ -444,7 +472,7 @@ export const refineText = async (text: string, instruction: string): Promise<str
  */
 export const translateText = async (text: string, targetLang: string): Promise<string> => {
   try {
-    const result = await callGeminiAPI("gemini-3.5-flash", [{ role: 'user', parts: [{ text: `Translate the following text to ${targetLang}. Return the translation only.\n\nText: "${text}"` }] }]);
+    const result = await callGeminiAPI("gemini-2.5-flash", [{ role: 'user', parts: [{ text: `Translate the following text to ${targetLang}. Return the translation only.\n\nText: "${text}"` }] }]);
     return result.text || text;
   } catch (err) {
     console.error("Translation failed:", err);
@@ -465,7 +493,7 @@ export const geminiTranscribe = async (base64Audio: string, mimeType: string, la
     }
   }
 
-  const result = await callGeminiAPI("gemini-3.5-flash", [
+  const result = await callGeminiAPI("gemini-2.5-flash", [
     { role: 'user', parts: [
       { text: prompt },
       { inlineData: { mimeType: normalizedMimeType, data: base64Audio } }

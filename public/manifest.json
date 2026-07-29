@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Tigrinya AI Geez Keyboard",
+  "name": "Tigrinya AI powered by Gemini AI",
   "version": "1.0.0",
-  "description": "Ethiopic virtual keyboard and AI assistant with a cosmic neural theme, supporting Tigrinya, Amharic, and English.",
+  "description": "Ethiopic virtual keyboard with a cosmic neural theme, supporting Tigrinya, Amharic, and English.",
   "action": {
     "default_popup": "index.html",
     "default_title": "ትግሪና ai"

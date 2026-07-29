@@ -5,6 +5,10 @@ export class AudioStreamer {
   private audioContext: AudioContext | null = null;
   private nextStartTime: number = 0;
   private sampleRate: number = 24000; // Gemini usually outputs 24kHz
+  
+  private totalAudioDuration: number = 0;
+  private playedAudioDuration: number = 0;
+  private lastUpdateTime: number = 0;
 
   constructor(sampleRate: number = 24000) {
     this.sampleRate = sampleRate;
@@ -16,7 +20,24 @@ export class AudioStreamer {
         sampleRate: this.sampleRate,
       });
       this.nextStartTime = this.audioContext.currentTime;
+      this.lastUpdateTime = this.audioContext.currentTime;
     }
+  }
+
+  getPlaybackProgress(): number {
+    if (!this.audioContext || this.totalAudioDuration === 0) return 0;
+    
+    const now = this.audioContext.currentTime;
+    // Calculate how much time passed since last check
+    const delta = now - this.lastUpdateTime;
+    this.lastUpdateTime = now;
+    
+    // Only increment played duration if we have audio playing (now < nextStartTime)
+    if (now < this.nextStartTime) {
+        this.playedAudioDuration += delta;
+    }
+
+    return Math.min(Math.max(this.playedAudioDuration / this.totalAudioDuration, 0), 1);
   }
 
   async play(base64Data: string) {
@@ -45,12 +66,14 @@ export class AudioStreamer {
 
     // Schedule playback to avoid gaps
     const now = this.audioContext.currentTime;
+    // Keep lastUpdateTime updated so we don't jump ahead if there was a gap
     if (this.nextStartTime < now) {
       this.nextStartTime = now + 0.05; // Small buffer
     }
 
     source.start(this.nextStartTime);
     this.nextStartTime += audioBuffer.duration;
+    this.totalAudioDuration += audioBuffer.duration;
   }
 
   stop() {
@@ -58,6 +81,9 @@ export class AudioStreamer {
       this.audioContext.close();
       this.audioContext = null;
       this.nextStartTime = 0;
+      this.totalAudioDuration = 0;
+      this.playedAudioDuration = 0;
+      this.lastUpdateTime = 0;
     }
   }
 

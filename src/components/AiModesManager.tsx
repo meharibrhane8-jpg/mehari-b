@@ -111,8 +111,8 @@ export const AI_MODES_LIST: AiModeConfig[] = [
   },
   {
     id: 'linguist',
-    name: "Linguist Assistant",
-    description: "Expert in translation.",
+    name: "Linguist Pro",
+    description: "Expert in languages & translation.",
     voiceMood: "Precise, academic.",
     maleVoice: "Charon",
     femaleVoice: "Kore",

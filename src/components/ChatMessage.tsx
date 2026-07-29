@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { User, Sparkles, BrainCircuit, Copy, Volume2, File as FileIcon, ArrowUpRight } from 'lucide-react';
+import { User, Sparkles, BrainCircuit, Copy, Volume2, File as FileIcon, ArrowUpRight, Pencil, Check, X } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { ChatMessage as ChatMessageType } from '../services/geminiService';
 import { MessageLinksAndSources } from './MessageLinksAndSources';
@@ -11,14 +11,30 @@ interface ChatMessageProps {
   index: number;
   onCopy: (text: string) => void;
   onPlayTTS?: (text: string, index: number) => void;
+  onEditSave?: (index: number, newText: string) => void;
 }
 
-const ChatMessage: React.FC<ChatMessageProps> = ({ msg, currentTheme, index, onCopy, onPlayTTS }) => {
+const ChatMessage: React.FC<ChatMessageProps> = ({ msg, currentTheme, index, onCopy, onPlayTTS, onEditSave }) => {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editText, setEditText] = useState(msg.parts);
+
+  const handleSave = () => {
+    if (onEditSave && editText.trim() !== "") {
+      onEditSave(index, editText);
+      setIsEditing(false);
+    }
+  };
+
+  const handleCancel = () => {
+    setEditText(msg.parts);
+    setIsEditing(false);
+  };
+
   return (
     <motion.div 
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      className="group flex items-start gap-3 sm:gap-4 p-4 sm:p-5 rounded-2xl transition-all bg-transparent hover:bg-black/[0.015] dark:hover:bg-white/[0.01]"
+      className="group relative flex items-start gap-3 sm:gap-4 p-4 sm:p-5 rounded-2xl transition-all bg-transparent hover:bg-black/[0.015] dark:hover:bg-white/[0.01]"
       role="listitem"
     >
       <div className="shrink-0 mt-1">
@@ -91,47 +107,95 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ msg, currentTheme, index, onC
               ))}
             </div>
           )}
-          <ReactMarkdown
-            components={{
-              a: ({ href, children }) => (
-                <a 
-                  href={href} 
-                  target="_blank" 
-                  rel="noopener noreferrer" 
-                  className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-300 transition-all font-semibold border border-indigo-500/10 decoration-transparent align-baseline text-sm sm:text-base my-0.5"
-                  title={href}
+
+          {isEditing ? (
+            <div className="flex flex-col gap-2 mt-2">
+              <textarea
+                value={editText}
+                onChange={(e) => setEditText(e.target.value)}
+                className={`w-full p-3 rounded-xl border font-ethiopic text-base sm:text-lg focus:ring-2 focus:ring-indigo-500 outline-none transition-all ${
+                  currentTheme.isDark 
+                    ? 'bg-white/5 border-white/10 text-white' 
+                    : 'bg-white border-slate-200 text-slate-800'
+                }`}
+                rows={Math.max(3, editText.split('\n').length)}
+                autoFocus
+              />
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleSave}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-colors"
                 >
-                  <span>{children as React.ReactNode}</span>
-                  <ArrowUpRight className="w-3.5 h-3.5 shrink-0 text-indigo-500/80 dark:text-indigo-300/80" />
-                </a>
-              )
-            }}
-          >
-            {msg.parts}
-          </ReactMarkdown>
-          <MessageLinksAndSources msg={msg} isDark={currentTheme.isDark} />
+                  <Check className="w-3.5 h-3.5" />
+                  Save & Regenerate
+                </button>
+                <button
+                  onClick={handleCancel}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                    currentTheme.isDark 
+                      ? 'bg-white/10 hover:bg-white/20 text-white' 
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                  }`}
+                >
+                  <X className="w-3.5 h-3.5" />
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <ReactMarkdown
+              components={{
+                a: ({ href, children }) => (
+                  <a 
+                    href={href} 
+                    target="_blank" 
+                    rel="noopener noreferrer" 
+                    className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-300 transition-all font-semibold border border-indigo-500/10 decoration-transparent align-baseline text-sm sm:text-base my-0.5"
+                    title={href}
+                  >
+                    <span>{children as React.ReactNode}</span>
+                    <ArrowUpRight className="w-3.5 h-3.5 shrink-0 text-indigo-500/80 dark:text-indigo-300/80" />
+                  </a>
+                )
+              }}
+            >
+              {msg.parts}
+            </ReactMarkdown>
+          )}
+          {!isEditing && <MessageLinksAndSources msg={msg} isDark={currentTheme.isDark} />}
         </div>
       </div>
       
       {/* Inner micro-actions for absolute control */}
-      <div className="absolute right-4 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 bg-black/40 dark:bg-black/80 p-1.5 rounded-lg border border-white/10">
-        <button
-          onClick={() => onCopy(msg.parts)}
-          className="p-1 hover:text-indigo-400 text-white/70 transition-colors"
-          title="Copy Text"
-        >
-          <Copy className="w-3.5 h-3.5" />
-        </button>
-        {msg.role === 'model' && onPlayTTS && (
+      {!isEditing && (
+        <div className="absolute right-4 top-4 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 bg-black/40 dark:bg-black/80 p-1.5 rounded-lg border border-white/10 z-20">
           <button
-            onClick={() => onPlayTTS(msg.parts, index)}
-            className="p-1 hover:text-emerald-400 text-white/70 transition-colors"
-            title="Play AI Voice"
+            onClick={() => onCopy(msg.parts)}
+            className="p-1 hover:text-indigo-400 text-white/70 transition-colors"
+            title="Copy Text"
           >
-            <Volume2 className="w-3.5 h-3.5" />
+            <Copy className="w-3.5 h-3.5" />
           </button>
-        )}
-      </div>
+          {msg.role === 'user' && onEditSave && (
+            <button
+              onClick={() => setIsEditing(true)}
+              className="p-1 hover:text-amber-400 text-white/70 transition-colors"
+              title="Edit Message"
+            >
+              <Pencil className="w-3.5 h-3.5" />
+            </button>
+          )}
+          {msg.role === 'model' && onPlayTTS && (
+            <button
+              onClick={() => onPlayTTS(msg.parts, index)}
+              className="p-1 hover:text-emerald-400 text-white/70 transition-colors"
+              title="Play AI Voice"
+            >
+              <Volume2 className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+      )}
     </motion.div>
   );
 };

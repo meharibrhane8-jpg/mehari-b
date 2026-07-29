@@ -49,10 +49,24 @@ async function startServer() {
   } catch (e) {
     console.error("Firebase Admin initialization error:", e);
     // fallback to getApp if it was already initialized
-    firebaseApp = getApp();
+    try {
+      firebaseApp = getApp();
+    } catch (innerErr) {
+      console.error("Firebase Admin getApp fallback also failed:", innerErr);
+    }
   }
   
-  const db = getFirestore(firebaseApp, "ai-studio-aigeezkeyboard-dace50ee-1fa2-46b6-adbc-f0bf24ed5201");
+  let db: any = null;
+  try {
+    db = getFirestore(firebaseApp, "ai-studio-aigeezkeyboard-dace50ee-1fa2-46b6-adbc-f0bf24ed5201");
+  } catch (dbErr) {
+    console.error("Firestore initialization error with firebaseApp:", dbErr);
+    try {
+      db = getFirestore(undefined, "ai-studio-aigeezkeyboard-dace50ee-1fa2-46b6-adbc-f0bf24ed5201");
+    } catch (dbErr2) {
+      console.error("Firestore default initialization fallback also failed:", dbErr2);
+    }
+  }
   // If a specific databaseId is provided, we should ensure we're using it.
   // In some environments, the default instance is enough. 
   // Let's assume standard for now but be aware of the custom ID.
@@ -75,6 +89,10 @@ async function startServer() {
       return res.status(400).json({ error: "Subscription and userId are required" });
     }
     
+    if (!db) {
+      return res.status(503).json({ error: "Firestore is not available in this environment." });
+    }
+    
     try {
       // Store or update user's push subscription
       await db.collection("push_subscriptions").doc(userId).set({
@@ -91,6 +109,7 @@ async function startServer() {
   // Background Task: Check for due reminders every minute
   setInterval(async () => {
     try {
+      if (!db) return;
       const now = Timestamp.now();
       const remindersRef = db.collection("reminders");
       const snapshot = await remindersRef
@@ -405,9 +424,9 @@ Please wait a brief moment and try again. If you are developing locally, please 
 
   async function retryRequest<T>(
     fn: () => Promise<T>,
-    maxAttempts = 5,
+    maxAttempts = 3,
     initialDelay = 1000,
-    backoffFactor = 2
+    backoffFactor = 1.5
   ): Promise<T> {
     let attempt = 1;
     let currentDelay = initialDelay;
@@ -415,12 +434,14 @@ Please wait a brief moment and try again. If you are developing locally, please 
       try {
         return await fn();
       } catch (error: any) {
-        const errMsg = (error.message || String(error)).toLowerCase();
+        const rawMsg = error.message || String(error);
+        const errMsg = rawMsg.toLowerCase();
         const isQuotaOrTemporary =
           error.status === "RESOURCE_EXHAUSTED" ||
           error.status === "UNAVAILABLE" ||
           error.code === 429 ||
           error.code === 503 ||
+          error.statusCode === 429 ||
           errMsg.includes("quota") ||
           errMsg.includes("limit") ||
           errMsg.includes("busy") ||
@@ -434,12 +455,20 @@ Please wait a brief moment and try again. If you are developing locally, please 
         if (!isQuotaOrTemporary || attempt >= maxAttempts) {
           throw error;
         }
-        
-        // Add jitter to delay
-        const jitter = Math.random() * 200;
-        const finalDelay = currentDelay + jitter;
-        
-        console.log(`[Server Retry] Attempt ${attempt} failed with quota/rate limit. Retrying in ${Math.round(finalDelay)}ms...`);
+
+        let calculatedDelay = currentDelay;
+        const retryMatch = rawMsg.match(/retry in (\d+(\.\d+)?)s/i);
+        if (retryMatch && retryMatch[1]) {
+          const seconds = parseFloat(retryMatch[1]);
+          if (!isNaN(seconds) && seconds > 0) {
+            calculatedDelay = Math.min(Math.ceil(seconds * 1000) + 500, 7000);
+          }
+        }
+
+        const jitter = Math.random() * 150;
+        const finalDelay = calculatedDelay + jitter;
+
+        console.warn(`[Server Retry] Attempt ${attempt}/${maxAttempts} hit temporary limit. Retrying in ${Math.round(finalDelay)}ms...`);
         await delay(finalDelay);
         attempt++;
         currentDelay *= backoffFactor;
@@ -473,7 +502,7 @@ Please wait a brief moment and try again. If you are developing locally, please 
       } catch (e) {}
 
       // Map models to standard Interactions API models
-      let model = requestedModel || "gemini-3.5-flash";
+      let model = requestedModel || "gemini-2.5-flash";
       let generationConfig: any = config ? { ...config } : {};
 
       if (aiModelMode === "thinking") {
@@ -491,7 +520,7 @@ Please wait a brief moment and try again. If you are developing locally, please 
         } else if (model.includes("2.5-flash") || model === "gemini-2.5-flash") {
           model = "gemini-2.5-flash";
         } else {
-          model = "gemini-3.5-flash";
+          model = "gemini-2.5-flash";
         }
       }
 
@@ -620,7 +649,7 @@ Please wait a brief moment and try again. If you are developing locally, please 
         const interaction = await retryRequest(() => runInteraction(model));
         return res.json({ text: interaction.output_text });
       } catch (error: any) {
-        console.error("Primary generateContent failed, starting recovery:", error);
+        console.log("[GenerateContent] Switching to secondary model fallback...");
         const errMsg = (error.message || "").toLowerCase();
         const isQuotaOrTemporaryErr =
           error.status === "RESOURCE_EXHAUSTED" ||
@@ -640,9 +669,8 @@ Please wait a brief moment and try again. If you are developing locally, please 
         if (isQuotaOrTemporaryErr) {
           // Use the most efficient models when possible
           const fallbackModels = [
+            "gemini-3.1-flash-lite",
             "gemini-2.5-flash",
-            "gemini-3.1-flash-lite", // Extremely cost-effective
-            "gemini-3.5-flash",
             "gemini-3.1-pro-preview",
           ];
           
@@ -652,7 +680,7 @@ Please wait a brief moment and try again. If you are developing locally, please 
           for (const fallbackModel of attempts) {
             try {
               console.log(`[Model Recovery] Retrying with model ${fallbackModel}...`);
-              const interaction = await retryRequest(() => runInteraction(fallbackModel));
+              const interaction = await retryRequest(() => runInteraction(fallbackModel), 1, 300);
               return res.json({ text: interaction.output_text });
             } catch (fallbackError: any) {
               console.log(`[Model Recovery] Model ${fallbackModel} was also busy/exhausted.`);
@@ -841,7 +869,7 @@ Please wait a brief moment and try again. If you are developing locally, please 
 
       const ai = new GoogleGenAI({ apiKey });
       const interaction = await retryRequest(() => ai.interactions.create({
-        model: "gemini-3.5-flash",
+        model: "gemini-2.5-flash",
         input: [
           { type: "image", data: base64Data, mime_type: contentType },
           { type: "text", text: prompt || "Analyze this image and describe its key visual elements." }
@@ -857,7 +885,7 @@ Please wait a brief moment and try again. If you are developing locally, please 
   });
 
   app.post("/api/gemini/tts", async (req, res) => {
-    const { text, voiceName, model } = req.body;
+    const { text, voiceName, model, systemInstruction, speed, pitch } = req.body;
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
       return res
@@ -867,34 +895,95 @@ Please wait a brief moment and try again. If you are developing locally, please 
 
     try {
       const ai = new GoogleGenAI({ apiKey });
-      const targetModel = model || "gemini-3.1-flash-tts-preview";
+      const selectedModel = (model && model.toLowerCase().includes("tts")) ? model : "gemini-3.1-flash-tts-preview";
       
-      // If Tigrinya-optimized speaker 'selam' is selected, map it to the beautiful Kore voice
-      let targetVoice = (voiceName || "kore").toLowerCase();
-      if (targetVoice === "selam") {
-        targetVoice = "kore";
+      let targetVoice = voiceName || "Kore";
+      const validVoices = ['Kore', 'Aoede', 'Charon', 'Fenrir', 'Puck', 'Zephyr', 'Orus'];
+
+      // First check if a valid voice name is embedded anywhere in voiceName string
+      const matchedVoice = validVoices.find(v => targetVoice.toLowerCase().includes(v.toLowerCase()));
+      
+      if (matchedVoice) {
+        targetVoice = matchedVoice;
+      } else {
+        // Voice mappings for Tigrinya / custom labels
+        const voiceMap: Record<string, string> = {
+          'selam': 'Kore',
+          'senait': 'Aoede',
+          'robel': 'Puck',
+          'aman': 'Charon',
+          'kidane': 'Fenrir',
+          'yohannes': 'Orus',
+          'luwam': 'Aoede',
+          'kibrom': 'Fenrir',
+          'yordanos': 'Kore',
+          'amanuel': 'Charon',
+          'arus': 'Orus',
+          'aigeez_female_traditional': 'Kore',
+          'aigeez_female_casual': 'Aoede',
+          'aigeez_male_formal': 'Charon'
+        };
+        const lower = targetVoice.toLowerCase();
+        let mapped = 'Kore';
+        for (const [key, val] of Object.entries(voiceMap)) {
+          if (lower.includes(key)) {
+            mapped = val;
+            break;
+          }
+        }
+        targetVoice = mapped;
       }
 
-      const interaction = await retryRequest(() => ai.interactions.create({
-        model: targetModel,
-        input: text,
-        response_modalities: ["audio"],
-        generation_config: {
-          speech_config: [
-            {
-              voice: targetVoice
-            }
-          ]
-        },
-      }));
+      const runTts = async (modelToUse: string) => {
+        const payload: any = {
+          model: modelToUse,
+          input: systemInstruction ? `[Instruction: ${systemInstruction}]\n\nRead the following text aloud: ${text}` : text,
+          response_modalities: ["audio"],
+          generation_config: {
+            speech_config: [
+              {
+                voice: targetVoice
+              }
+            ]
+          },
+        };
+
+        return await ai.interactions.create(payload);
+      };
+
+      let interaction: any;
+      const primaryModel = selectedModel || "gemini-3.1-flash-tts-preview";
+      const candidateModels = Array.from(new Set([
+        primaryModel, 
+        "gemini-3.1-flash-tts-preview", 
+        "gemini-3.1-flash-lite"
+      ]));
+      let lastTtsError: any = null;
+
+      for (const modelToTry of candidateModels) {
+        try {
+          interaction = await retryRequest(() => runTts(modelToTry));
+          if (interaction) break;
+        } catch (err: any) {
+          console.warn(`[TTS] Model ${modelToTry} failed (${err.message}). Trying fallback...`);
+          lastTtsError = err;
+        }
+      }
+
+      if (!interaction) {
+        throw lastTtsError || new Error("Failed to generate TTS audio.");
+      }
 
       let audioData = null;
-      for (const step of interaction.steps) {
-        if (step.type === "model_output") {
-          const audioContent = step.content?.find((c) => c.type === "audio");
-          if (audioContent && audioContent.data) {
-            audioData = audioContent.data;
-            break;
+      const interactionResult = interaction as any;
+      if (interactionResult.steps) {
+        for (const step of interactionResult.steps) {
+          if (step.type === "model_output") {
+            const audioContent = step.content?.find((c: any) => c.type === "audio");
+            if (audioContent && audioContent.data) {
+              audioData = audioContent.data;
+              break;
+            }
           }
         }
       }
@@ -904,6 +993,46 @@ Please wait a brief moment and try again. If you are developing locally, please 
       console.error("Gemini TTS Error:", error);
       const { code, status, message } = parseGeminiError(error);
       res.status(code).json({ error: message, status });
+    }
+  });
+
+  app.post("/api/gemini/refine", async (req, res) => {
+    const { text, language = 'ti' } = req.body;
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) return res.status(500).json({ error: "API Key missing" });
+
+    try {
+      const ai = new GoogleGenAI({ apiKey });
+      const prompt = `Refine the following ${language === 'ti' ? 'Tigrinya' : 'Amharic'} text written in Ge'ez script to optimize it for high-quality Text-to-Speech (TTS) output.
+      
+      Requirements:
+      1. Correct any common punctuation issues (use Ge'ez punctuation: '፣' '።' '፧').
+      2. Ensure the cadence is natural for a native speaker.
+      3. Do NOT change the meaning, only fix the phrasing or punctuation to sound better when read aloud.
+      4. Output ONLY the refined Ge'ez text.
+      
+      Text to refine:
+      "${text}"`;
+
+      const runRefine = async (modelName: string) => {
+        return await ai.interactions.create({
+          model: modelName,
+          input: prompt,
+          system_instruction: "You are a linguistics expert in Semitic languages (Tigrinya/Amharic) and Ge'ez script."
+        });
+      };
+
+      let interaction: any;
+      try {
+        interaction = await retryRequest(() => runRefine("gemini-3.1-flash-lite"), 2, 300);
+      } catch (refineErr) {
+        interaction = await retryRequest(() => runRefine("gemini-2.5-flash"), 1, 300);
+      }
+
+      res.json({ refinedText: interaction.output_text?.trim() });
+    } catch (error: any) {
+      console.error("Refine Error:", error);
+      res.status(500).json({ error: "Failed to refine text" });
     }
   });
 
@@ -1043,7 +1172,7 @@ Please wait a brief moment and try again. If you are developing locally, please 
         systemInstructionText += historyPrompt;
       }
 
-      let resolvedModel = "gemini-3.5-flash";
+      let resolvedModel = "gemini-2.5-flash";
       let tools: any[] | undefined = undefined;
       let generationConfig: any = {};
       
@@ -1064,13 +1193,13 @@ Please wait a brief moment and try again. If you are developing locally, please 
         delete generationConfig.maxOutputTokens;
         delete generationConfig.max_output_tokens;
       } else if (aiModelMode === "search") {
-        resolvedModel = "gemini-3.5-flash";
-        tools = [{ google_search: {} }];
+        resolvedModel = "gemini-2.5-flash";
+        tools = [{ type: "google_search" }];
       } else if (aiModelMode === "maps") {
-        resolvedModel = "gemini-3.5-flash";
-        tools = [{ google_maps: {} }];
+        resolvedModel = "gemini-2.5-flash";
+        tools = [{ type: "google_maps" }];
       } else {
-        resolvedModel = "gemini-3.5-flash";
+        resolvedModel = "gemini-2.5-flash";
       }
 
       const runStream = async (modelName: string) => {
@@ -1096,17 +1225,20 @@ Please wait a brief moment and try again. If you are developing locally, please 
         delete generation_config.response_schema;
 
         // Try to establish the stream using retryRequest
-        const stream = await retryRequest(() => ai.interactions.create({
-          model: modelName,
-          input: input,
-          system_instruction: systemInstructionText,
-          tools,
-          generation_config: generation_config,
-          response_format,
-          stream: true,
-        }));
+        const stream = await retryRequest(() => {
+          const payload: any = {
+            model: modelName,
+            input: input,
+            system_instruction: systemInstructionText,
+            generation_config: generation_config,
+            stream: true,
+          };
+          if (tools) payload.tools = tools;
+          if (response_format) payload.response_format = response_format;
+          return ai.interactions.create(payload);
+        });
 
-        for await (const event of stream) {
+        for await (const event of (stream as any)) {
           // Transform Interactions API event to legacy candidates format for frontend compatibility
           const sseEvent = event as any;
 
@@ -1196,7 +1328,7 @@ Please wait a brief moment and try again. If you are developing locally, please 
         if (isQuotaOrTemporaryErr) {
           const fallbackModels = [
             "gemini-3.1-flash-lite", // Extremely cost-effective
-            "gemini-3.5-flash",
+            "gemini-2.5-flash",
             "gemini-3.1-pro-preview",
           ];
           
@@ -1279,8 +1411,8 @@ Please wait a brief moment and try again. If you are developing locally, please 
 
         // 1. Initial configuration setup
         if (data.setup) {
-          const { systemInstruction, voiceName, tools } = data.setup;
-          const apiKey = process.env.GEMINI_API_KEY;
+          const { systemInstruction, voiceName } = data.setup;
+          const apiKey = process.env.GEMINI_API_KEY || process.env.GeminiAPIKey;
           if (!apiKey) {
             clientWs.send(
               JSON.stringify({
@@ -1291,7 +1423,14 @@ Please wait a brief moment and try again. If you are developing locally, please 
             return;
           }
 
-          const ai = new GoogleGenAI({ apiKey });
+          const ai = new GoogleGenAI({ 
+            apiKey,
+            httpOptions: {
+              headers: {
+                'User-Agent': 'aistudio-build',
+              }
+            }
+          });
 
           console.log("Connecting to Gemini Live with model: gemini-3.1-flash-live-preview");
           try {
@@ -1305,7 +1444,6 @@ Please wait a brief moment and try again. If you are developing locally, please 
                   },
                 },
                 systemInstruction: (systemInstruction || "You are a helpful assistant.") + " You specializing in Ethiopic languages (Tigrinya, Amharic) and English.",
-                tools: tools || [{ googleSearch: {} }],
               },
               callbacks: {
                 onmessage: (message: LiveServerMessage) => {
@@ -1341,7 +1479,9 @@ Please wait a brief moment and try again. If you are developing locally, please 
                   isClosed = true;
                   
                   let reason = "Unknown reason";
+                  let closeCode = 1000;
                   if (event) {
+                    closeCode = event.code || 1000;
                     reason = event.reason || `Code: ${event.code}`;
                     // Special handling for Node.js ws Symbol(kReason)
                     const symbols = Object.getOwnPropertySymbols(event);
@@ -1357,24 +1497,26 @@ Please wait a brief moment and try again. If you are developing locally, please 
                   } else {
                     console.log("Gemini Live Session Closed by Google backend:", reason);
                   }
-                  
-                  // Format a friendly, human-readable error message if the session closed due to backend limits / GoAway timeouts
-                  let friendlyError = "Session closed by Gemini backend";
-                  let friendlyDetails = reason;
 
-                  if (reasonStr.includes("goaway") || reasonStr.includes("session durat") || reasonStr.includes("aborted")) {
-                    friendlyError = "Live Session Completed";
-                    friendlyDetails = "Your live session has reached its maximum duration limit. You can start a new session anytime!";
-                  } else if (reasonStr.includes("quota") || reasonStr.includes("limit") || reasonStr.includes("exceeded")) {
-                    friendlyError = "Service Limit Reached";
-                    friendlyDetails = "You have exceeded your current usage quota. Please check your plan or try again later.";
+                  if (clientWs.readyState === WebSocket.OPEN) {
+                    if (reasonStr.includes("goaway") || reasonStr.includes("session durat") || reasonStr.includes("aborted")) {
+                      clientWs.send(JSON.stringify({ 
+                        info: "Live Session Completed",
+                        details: "Your live session has reached its maximum duration limit. You can start a new session anytime!"
+                      }));
+                    } else if (reasonStr.includes("quota") || reasonStr.includes("limit") || reasonStr.includes("exceeded")) {
+                      clientWs.send(JSON.stringify({ 
+                        error: "Service Limit Reached",
+                        details: "You have exceeded your current usage quota. Please check your plan or try again later."
+                      }));
+                    } else if (closeCode === 1006 || reasonStr.includes("1006") || reasonStr.includes("abnormal")) {
+                      clientWs.send(JSON.stringify({
+                        info: "Live Talk Disconnected",
+                        details: "Live session ended naturally. Feel free to reconnect anytime."
+                      }));
+                    }
                   }
-
-                  clientWs.send(JSON.stringify({ 
-                    error: friendlyError,
-                    details: friendlyDetails
-                  }));
-                  clientWs.close();
+                  try { clientWs.close(); } catch (err) {}
                 },
                 onerror: (err: any) => {
                   if (isClosed) return;
@@ -1387,15 +1529,22 @@ Please wait a brief moment and try again. If you are developing locally, please 
                   const errMsgLower = errMsg.toLowerCase();
                   if (errMsgLower.includes("quota") || errMsgLower.includes("limit") || errMsgLower.includes("exceeded")) {
                     console.warn("Gemini Live Bridge Inner Notice (Quota/Limit):", errMsg);
+                    if (clientWs.readyState === WebSocket.OPEN) {
+                      clientWs.send(JSON.stringify({
+                        error: "Service Limit Reached",
+                        details: "Quota or rate limit reached. Please try again shortly."
+                      }));
+                    }
                   } else {
                     console.error("Gemini Live Bridge Inner Error (callback):", err);
+                    if (clientWs.readyState === WebSocket.OPEN) {
+                      clientWs.send(
+                        JSON.stringify({
+                          error: "Gemini Live API error: " + errMsg,
+                        }),
+                      );
+                    }
                   }
-
-                  clientWs.send(
-                    JSON.stringify({
-                      error: "Gemini Live API error: " + errMsg,
-                    }),
-                  );
                 },
               },
             });

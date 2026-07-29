@@ -10,15 +10,11 @@ import {
   AlertCircle, 
   Info, 
   Pencil, 
-  Check, 
-  LogIn, 
-  LogOut, 
-  ShieldCheck,
+  Check,
   Terminal,
   CheckCircle2,
   CloudLightning,
-  CloudRain,
-  Database
+  CloudRain
 } from 'lucide-react';
 
 interface MemoryBankDrawerProps {
@@ -35,9 +31,6 @@ interface MemoryBankDrawerProps {
   };
   isMemoryEnabled: boolean;
   onToggleMemoryEnabled: (enabled: boolean) => void;
-  currentUser: any;
-  onSignIn: () => void;
-  onSignOut: () => void;
   customSystemInstructions: string;
   onSaveCustomSystemInstructions: (instructions: string) => void;
   t: (key: string) => string;
@@ -55,9 +48,6 @@ export const MemoryBankDrawer = ({
   currentTheme,
   isMemoryEnabled,
   onToggleMemoryEnabled,
-  currentUser,
-  onSignIn,
-  onSignOut,
   customSystemInstructions,
   onSaveCustomSystemInstructions,
   t,
@@ -209,84 +199,6 @@ export const MemoryBankDrawer = ({
 
 
 
-              {/* Cloud Sync Status Widget */}
-              <div className={`p-4 mb-6 rounded-2xl border flex flex-col gap-3.5 transition-all duration-300 ${
-                currentTheme.isDark 
-                  ? 'bg-white/[0.01] border-white/5' 
-                  : 'bg-slate-50/30 border-slate-200/60'
-              }`}>
-                <div className="flex justify-between items-center">
-                  <div className="flex items-center gap-2">
-                    <Database className="w-3.5 h-3.5 text-indigo-500 opacity-80" />
-                    <span className="text-[11px] font-bold font-sans tracking-tight">Data Cloud Backup</span>
-                  </div>
-                  {currentUser ? (
-                    <span className="text-[9px] font-extrabold text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-full flex items-center gap-1 uppercase tracking-wider">
-                      <ShieldCheck className="w-2.5 h-2.5" /> Synced
-                    </span>
-                  ) : (
-                    <span className="text-[9px] font-extrabold text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded-full flex items-center gap-1 uppercase tracking-wider">
-                      Local
-                    </span>
-                  )}
-                </div>
-
-                {currentUser ? (
-                  <div className={`flex items-center justify-between gap-3 p-3 rounded-xl border ${
-                    currentTheme.isDark ? 'bg-white/[0.02] border-white/5' : 'bg-white border-slate-100'
-                  }`}>
-                    <div className="flex items-center gap-2.5 truncate">
-                      {currentUser.photoURL ? (
-                        <img 
-                          src={currentUser.photoURL} 
-                          alt={currentUser.displayName || "User"} 
-                          className="w-7.5 h-7.5 rounded-full object-cover border border-white/10"
-                          referrerPolicy="no-referrer"
-                        />
-                      ) : (
-                        <div className="w-7.5 h-7.5 rounded-full bg-indigo-500/10 text-indigo-400 flex items-center justify-center text-xs font-bold font-sans shrink-0 border border-indigo-500/20">
-                          {(currentUser.displayName || currentUser.email || 'U').charAt(0).toUpperCase()}
-                        </div>
-                      )}
-                      <div className="flex flex-col truncate leading-tight">
-                        <span className="text-xs font-bold truncate text-slate-800 dark:text-white/90">{currentUser.displayName || "Authenticated"}</span>
-                        <span className="text-[9px] opacity-50 truncate font-mono">{currentUser.email}</span>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={onSignOut}
-                      className="p-1.5 rounded-lg hover:bg-rose-500/10 text-slate-400 hover:text-rose-500 transition-all cursor-pointer shrink-0"
-                      title="Sign Out"
-                    >
-                      <LogOut className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex flex-col gap-2.5">
-                    <p className="text-[10px] opacity-60 leading-normal font-sans">
-                      Securely back up your memories and synchronize custom system instructions across all devices.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={onSignIn}
-                      className="w-full py-2.5 px-3.5 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm hover:shadow-indigo-500/10"
-                    >
-                      <LogIn className="w-3.5 h-3.5" />
-                      <span>{t('connectProfile')}</span>
-                    </button>
-                    {typeof window !== 'undefined' && window.self !== window.top && (
-                      <button
-                        type="button"
-                        onClick={() => window.open(window.location.href, '_blank')}
-                        className="w-full py-2 px-3.5 rounded-xl text-xs font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 transition-colors flex items-center justify-center gap-1.5"
-                      >
-                        <span>↗️ Open in New Tab to Sign In</span>
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
               {/* Help Tip Overlay */}
               <AnimatePresence>
                 {showHelp && (
