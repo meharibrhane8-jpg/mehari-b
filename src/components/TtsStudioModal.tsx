@@ -1276,7 +1276,7 @@ ${rawScriptInput}
     <>
       <AnimatePresence>
         {isOpen && (
-        <div className="fixed inset-0 z-[2001] flex items-center justify-center bg-black/60 p-0 sm:p-4 md:p-6 backdrop-blur-md">
+        <div className="fixed inset-0 z-[2001] flex items-center justify-center bg-black/60 p-0 sm:p-4 md:p-6 ">
           <motion.div
             initial={{ opacity: 0, scale: 0.96, y: 10 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -1346,7 +1346,7 @@ ${rawScriptInput}
                 <>
                   {/* Backdrop for mobile */}
                   <div 
-                    className="lg:hidden absolute inset-0 z-30 bg-black/50 backdrop-blur-sm"
+                    className="lg:hidden absolute inset-0 z-30 bg-black/50 "
                     onClick={() => setShowSettings(false)}
                   />
                   <div className={`absolute lg:relative left-0 top-0 bottom-0 z-40 lg:z-auto w-72 shrink-0 flex flex-col border-r ${isDark ? 'bg-[#0d0d10] border-white/10' : 'bg-slate-50 border-slate-200'} overflow-y-auto custom-scrollbar shadow-2xl lg:shadow-none`}>
@@ -1470,7 +1470,7 @@ ${rawScriptInput}
 
                                 {/* Speaker Dropdown */}
                                 {activeDropdown === block.id && (
-                                  <div className={`absolute top-full left-0 mt-2 w-72 rounded-2xl shadow-2xl border z-30 py-2 overflow-hidden backdrop-blur-xl ${isDark ? 'bg-slate-900/95 border-white/10' : 'bg-white border-slate-200'}`}>
+                                  <div className={`absolute top-full left-0 mt-2 w-72 rounded-2xl shadow-2xl border z-30 py-2 overflow-hidden  ${isDark ? 'bg-slate-900/95 border-white/10' : 'bg-white border-slate-200'}`}>
                                     <div className="px-4 py-2 border-b border-slate-200 dark:border-white/5 mb-1">
                                       <span className="text-[10px] font-black uppercase tracking-[0.2em] opacity-40">Select AI Voice</span>
                                     </div>
@@ -1619,11 +1619,11 @@ ${rawScriptInput}
                 <>
                   {/* Backdrop for mobile */}
                   <div 
-                    className="lg:hidden absolute inset-0 z-30 bg-black/50 backdrop-blur-sm"
+                    className="lg:hidden absolute inset-0 z-30 bg-black/50 "
                     onClick={() => setShowHistory(false)}
                   />
                   <div className={`absolute lg:relative right-0 top-0 bottom-0 z-40 lg:z-auto w-80 shrink-0 flex flex-col border-l ${isDark ? 'bg-[#0d0d10] border-white/10' : 'bg-slate-50 border-slate-200'} overflow-y-auto custom-scrollbar shadow-2xl lg:shadow-none`}>
-                    <div className={`p-5 border-b ${isDark ? 'border-white/5 bg-[#0d0d10]/95' : 'border-slate-100 bg-slate-50/90'} backdrop-blur-md flex items-center justify-between sticky top-0 z-10 transition-colors duration-300`}>
+                    <div className={`p-5 border-b ${isDark ? 'border-white/5 bg-[#0d0d10]/95' : 'border-slate-100 bg-slate-50/90'}  flex items-center justify-between sticky top-0 z-10 transition-colors duration-300`}>
                       <div className="flex items-center gap-2">
                         <History className={`w-3.5 h-3.5 opacity-90 ${getAccentText()}`} />
                         <h3 className={`text-[11px] font-extrabold uppercase tracking-[0.15em] ${isDark ? 'text-white/85' : 'text-slate-700'}`}>{t.projectHistoryLabel}</h3>
@@ -1864,7 +1864,7 @@ ${rawScriptInput}
     {/* Smart Import Script Modal Overlay */}
     <AnimatePresence>
       {showSmartImport && (
-        <div className="fixed inset-0 z-[2100] flex items-center justify-center bg-black/75 p-4 backdrop-blur-md">
+        <div className="fixed inset-0 z-[2100] flex items-center justify-center bg-black/75 p-4 ">
           <motion.div
             initial={{ scale: 0.95, opacity: 0, y: 15 }}
             animate={{ scale: 1, opacity: 1, y: 0 }}
@@ -1992,7 +1992,7 @@ ${rawScriptInput}
     {/* Voice Preview Gallery Modal Overlay */}
     <AnimatePresence>
       {showVoiceGallery && (
-        <div className="fixed inset-0 z-[2100] flex items-center justify-center bg-black/80 p-4 sm:p-6 backdrop-blur-md">
+        <div className="fixed inset-0 z-[2100] flex items-center justify-center bg-black/80 p-4 sm:p-6 ">
           <motion.div
             initial={{ scale: 0.95, opacity: 0, y: 15 }}
             animate={{ scale: 1, opacity: 1, y: 0 }}

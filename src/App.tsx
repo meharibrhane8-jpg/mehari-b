@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import {
+import { 
   useState,
   useRef,
   useEffect,
@@ -11,10 +11,10 @@ import {
   useCallback,
   useMemo,
 } from "react";
-import { motion, AnimatePresence } from "motion/react";
+import {  motion, AnimatePresence } from "motion/react";
 import ReactMarkdown from "react-markdown";
 import rehypeRaw from "rehype-raw";
-import {
+import { 
   MessageSquare,
   MessageSquarePlus,
   Send,
@@ -28,6 +28,7 @@ import {
   CornerDownLeft,
   Globe,
   Copy,
+  Volume2,
   ClipboardPaste,
   Trash2,
   Check,
@@ -63,7 +64,6 @@ import {
   BrainCircuit,
   History,
   Pencil,
-  Volume2,
   Download,
   Keyboard,
   Highlighter,
@@ -85,13 +85,13 @@ import {
   Printer,
   BarChart2,
 } from "lucide-react";
-import { GEEZ_MAP, VOWEL_MAP, PHONETIC_MAP } from "./geezUtils";
-import {
+import {  GEEZ_MAP, VOWEL_MAP, PHONETIC_MAP } from "./geezUtils";
+import { 
   getSuggestions,
   TIGRINYA_DICTIONARY,
   AUTOCORRECT_MAP,
 } from "./lib/autocorrect";
-import {
+import { 
   startAIChat,
   sendMessageToAI,
   sendMessageStreamToAI,
@@ -105,7 +105,7 @@ import {
   callGeminiImageAPI,
   geminiTranscribe,
 } from "./services/geminiService";
-import {
+import { 
   getAudioContext,
   playBase64Audio,
   playConfirmationTone,
@@ -113,10 +113,10 @@ import {
   stopAllAudio,
   speakWithWebSpeech,
 } from "./services/audioService";
-import { downloadWav } from "./lib/wavUtils";
-import { AudioRecorder } from "./lib/audioRecorder";
-import { AudioStreamer } from "./lib/audioStreamer";
-import {
+import {  downloadWav } from "./lib/wavUtils";
+import {  AudioRecorder } from "./lib/audioRecorder";
+import {  AudioStreamer } from "./lib/audioStreamer";
+import { 
   Headphones,
   Radio,
   Mic2,
@@ -130,33 +130,33 @@ import {
   Folder,
   FolderOpen,
 } from "lucide-react";
-import { SettingsDrawer } from "./components/SettingsDrawer";
-import { LiveVoiceSelectionDrawer } from "./components/LiveVoiceSelectionDrawer";
-import { TIGRINYA_VOICES } from "./data/tigrinyaVoiceProfiles";
-import { FileAttachmentModule } from "./components/FileAttachmentModule";
-import { MemoryBankDrawer } from "./components/MemoryBankDrawer";
-import { AiModesManager, AI_MODES_LIST } from "./components/AiModesManager";
+import {  SettingsDrawer } from "./components/SettingsDrawer";
+import {  LiveVoiceSelectionDrawer } from "./components/LiveVoiceSelectionDrawer";
+import {  TIGRINYA_VOICES } from "./data/tigrinyaVoiceProfiles";
+import {  FileAttachmentModule } from "./components/FileAttachmentModule";
+import {  MemoryBankDrawer } from "./components/MemoryBankDrawer";
+import {  AiModesManager, AI_MODES_LIST } from "./components/AiModesManager";
 
 
-import { DailyTip } from "./components/DailyTip";
-import { OnboardingGuide } from "./components/OnboardingGuide";
-import { TtsStudioModal } from "./components/TtsStudioModal";
-import { SpeechBooth } from "./components/SpeechBooth";
+import {  DailyTip } from "./components/DailyTip";
+import {  OnboardingGuide } from "./components/OnboardingGuide";
+import {  TtsStudioModal } from "./components/TtsStudioModal";
+import {  SpeechBooth } from "./components/SpeechBooth";
 
-import { useLocalTime } from "./lib/useLocalTime";
-import { AttachedFile } from "./types";
-import { MessageLinksAndSources } from "./components/MessageLinksAndSources";
+import {  useLocalTime } from "./lib/useLocalTime";
+import {  AttachedFile } from "./types";
+import {  MessageLinksAndSources } from "./components/MessageLinksAndSources";
 import ChatMessageComponent from "./components/ChatMessage";
-import { ThinkingBox } from "./components/ThinkingBox";
-import { SearchingBadge } from "./components/SearchingBadge";
-import { auth, googleSignIn, logout } from "./services/firebaseAuthService";
-import { onAuthStateChanged, User as FirebaseUser } from "firebase/auth";
-import {
+import {  ThinkingBox } from "./components/ThinkingBox";
+import {  SearchingBadge } from "./components/SearchingBadge";
+import {  auth, googleSignIn, logout } from "./services/firebaseAuthService";
+import {  onAuthStateChanged, User as FirebaseUser } from "firebase/auth";
+import { 
   loadUserMemories,
   saveUserMemories,
   testConnection,
 } from "./services/firebaseDbService";
-import { Link2, ExternalLink, ArrowUpRight } from "lucide-react";
+import {  Link2, ExternalLink, ArrowUpRight } from "lucide-react";
 
 // Predefined Emoji List
 const EMOJIS = [
@@ -1265,6 +1265,7 @@ export default function App() {
 
   // AI Agent Mode
   const [isAIAgentMode, setIsAIAgentMode] = useState(false);
+  const [activeAgentAction, setActiveAgentAction] = useState<string | null>(null);
 
   // Faceless YT Creator wizard & project panel state
   const [isYTCreatorMode, setIsYTCreatorMode] = useState(false);
@@ -1977,6 +1978,7 @@ export default function App() {
     const nextCode = langs[nextIndex];
 
     setActiveLanguage(nextCode);
+    setChatLanguage(nextCode);
 
     if (!isSymbols) {
       if (nextCode === "en") setLayout(LATIN_ROWS);
@@ -2672,7 +2674,7 @@ Identify any NEW specific, permanent, or important facts about the user (e.g. na
           : "bg-black text-white border-white ") + "border-white ";
 
     classes +=
-      "backdrop-blur-md border px-1 text-[clamp(14px,3.5vw,26px)] select-none ";
+      " border px-1 text-[clamp(14px,3.5vw,26px)] select-none ";
     if (isSpecial)
       classes +=
         "text-[clamp(0.6rem,1.8vw,0.85rem)] uppercase tracking-widest font-black ";
@@ -2722,7 +2724,7 @@ Identify any NEW specific, permanent, or important facts about the user (e.g. na
 
     if (isQuotaExceeded) {
       return (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/80 backdrop-blur-xl">
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/80 ">
           <div className="w-full max-w-md bg-[#0a0c10] p-8 rounded-[40px] border-2 border-white/5 shadow-2xl text-center">
             <div className="w-16 h-16 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center mb-6 mx-auto text-amber-400">
               <AlertTriangle className="w-8 h-8" />
@@ -2779,7 +2781,7 @@ Identify any NEW specific, permanent, or important facts about the user (e.g. na
             </div>
 
             {/* Main Glowing Container - Even more compact */}
-            <motion.div className="relative w-full bg-[#0a0c10]/98 rounded-[24px] border border-white/10 overflow-hidden flex flex-col pointer-events-auto backdrop-blur-2xl">
+            <motion.div className="relative w-full bg-[#0a0c10]/98 rounded-[24px] border border-white/10 overflow-hidden flex flex-col pointer-events-auto ">
               {/* Top Bar - Minimalist */}
               <div className="relative z-10 flex items-center justify-between px-5 pt-3">
                 <div className="flex items-center gap-2.5">
@@ -2819,7 +2821,7 @@ Identify any NEW specific, permanent, or important facts about the user (e.g. na
                   </span>
                 </div>
 
-                <div className="bg-white/5 backdrop-blur-md border border-white/10 px-2 py-0.5 rounded-full flex items-center gap-1.5">
+                <div className="bg-white/5  border border-white/10 px-2 py-0.5 rounded-full flex items-center gap-1.5">
                   <Globe className="w-2 h-2 text-indigo-400" />
                   <span className="text-white/50 text-[7px] font-bold uppercase tracking-wider">
                     {activeLanguage === "en"
@@ -2989,8 +2991,8 @@ Identify any NEW specific, permanent, or important facts about the user (e.g. na
         <div
           className={`mx-auto w-full max-w-2xl flex flex-col relative gap-1 sm:gap-1.5 p-2 rounded-t-[2rem] border-x border-t transition-all duration-300 ${
             currentTheme.isDark
-              ? "bg-black/40 border-white/10 backdrop-blur-2xl shadow-[0_-10px_40px_rgba(0,0,0,0.3)]"
-              : "bg-white/95 border-slate-200 backdrop-blur-2xl shadow-[0_-10px_40px_rgba(15,23,42,0.1)]"
+              ? "bg-black/40 border-white/10  shadow-[0_-10px_40px_rgba(0,0,0,0.3)]"
+              : "bg-white/95 border-slate-200  shadow-[0_-10px_40px_rgba(15,23,42,0.1)]"
           }`}
         >
           {/* Header */}
@@ -3000,7 +3002,7 @@ Identify any NEW specific, permanent, or important facts about the user (e.g. na
             <div className="flex items-center gap-2">
               <button
                 onClick={cycleLanguage}
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider backdrop-blur-md transition-all ${
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider  transition-all ${
                   isSymbols
                     ? currentTheme.isDark
                       ? "bg-white/10 text-white border border-white/20"
@@ -3102,7 +3104,7 @@ Identify any NEW specific, permanent, or important facts about the user (e.g. na
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
-                className={`absolute inset-0 z-[120] rounded-3xl p-4 flex flex-col gap-4 overflow-hidden backdrop-blur-3xl border border-white/20 ${currentTheme.isDark ? "bg-black/80" : "bg-white/80"}`}
+                className={`absolute inset-0 z-[120] rounded-3xl p-4 flex flex-col gap-4 overflow-hidden  border border-white/20 ${currentTheme.isDark ? "bg-black/80" : "bg-white/80"}`}
               >
                 <div className="flex justify-between items-center shrink-0">
                   <div className="flex items-center gap-2">
@@ -3224,7 +3226,7 @@ Identify any NEW specific, permanent, or important facts about the user (e.g. na
                       initial={{ opacity: 0, scale: 0.9, y: 10 }}
                       animate={{ opacity: 1, scale: 1, y: -10 }}
                       exit={{ opacity: 0, scale: 0.9, y: 10 }}
-                      className="absolute z-[130] bg-white/10 backdrop-blur-3xl border border-white/20 p-1.5 rounded-2xl shadow-2xl flex gap-1"
+                      className="absolute z-[130] bg-white/10  border border-white/20 p-1.5 rounded-2xl shadow-2xl flex gap-1"
                       style={{
                         left: Math.min(
                           window.innerWidth - 150,
@@ -3294,7 +3296,7 @@ Identify any NEW specific, permanent, or important facts about the user (e.g. na
                   className="w-full overflow-hidden"
                 >
                   <div
-                    className={`p-2 rounded-2xl flex justify-center gap-1 sm:gap-2 border backdrop-blur-3xl shadow-xl ${
+                    className={`p-2 rounded-2xl flex justify-center gap-1 sm:gap-2 border  shadow-xl ${
                       currentTheme.isDark
                         ? "bg-slate-800/80 border-white/10"
                         : "bg-slate-50 border-slate-200"
@@ -3469,7 +3471,7 @@ Identify any NEW specific, permanent, or important facts about the user (e.g. na
                           ? "bg-slate-200 text-slate-700 border-slate-300 hover:bg-slate-300/80 shadow-sm"
                           : "bg-slate-50 border-slate-200/60 text-slate-800 hover:bg-slate-100 shadow-sm"
                     }
-                    backdrop-blur-md border px-1 text-[clamp(14px,3.5vw,26px)] select-none
+                     border px-1 text-[clamp(14px,3.5vw,26px)] select-none
                     ${isSpecial ? "text-[clamp(0.6rem,1.8vw,0.85rem)] uppercase tracking-widest font-black" : ""}
                     ${key === "space" ? (currentTheme.isDark ? "bg-white/10 text-white/50 flex-[5] tracking-[0.3em] min-w-0" : "bg-slate-100 border-slate-300 text-slate-600 flex-[5] tracking-[0.3em] min-w-0") : ["enter", "space"].includes(key) ? "" : ["shift", "backspace", "123", "ABC"].includes(key) ? "flex-[1.5]" : "flex-1"}
                     ${key === "123" && isSymbols ? (currentTheme.isDark ? "text-indigo-400 border-indigo-500/50 bg-indigo-500/10" : "text-indigo-600 border-indigo-300 bg-indigo-50") : ""}
@@ -3640,6 +3642,9 @@ Identify any NEW specific, permanent, or important facts about the user (e.g. na
   };
 
   const executeAppAction = (actionName: string, args: any) => {
+    setActiveAgentAction(`Executing ${actionName}...`);
+    setTimeout(() => setActiveAgentAction(null), 3000);
+
     switch (actionName) {
       case "changeLanguage":
         if (args.lang) {
@@ -3665,6 +3670,12 @@ Identify any NEW specific, permanent, or important facts about the user (e.g. na
       case "openMemory":
         setIsMemoryDrawerOpen(true);
         showToast("Agent opened Memory Panel");
+        break;
+      case "setTTSVoice":
+        if (args.voiceId) {
+          setVoice(args.voiceId);
+          showToast(`Agent set voice to ${args.voiceId}`);
+        }
         break;
       case "saveProject":
         if (args.title && args.content) {
@@ -3804,7 +3815,7 @@ Identify any NEW specific, permanent, or important facts about the user (e.g. na
         : "";
 
       const agentModeString = isAIAgentMode
-        ? `\n\n=== AUTONOMOUS AI AGENT MODE ENABLED ===\nYou are now acting as the overarching Project Manager and Autonomous Agent for this entire application. You have the ability to CONTROL the application directly on behalf of the user.\n\nTo execute an action, you MUST output an exact XML tag anywhere in your response. The application will intercept it and execute it silently.\nAvailable Actions:\n<APP_ACTION>{"action": "changeLanguage", "args": {"lang": "en" | "am" | "ti"}}</APP_ACTION> - Changes the app language.\n<APP_ACTION>{"action": "setTheme", "args": {"theme": "light" | "dark" | "system"}}</APP_ACTION> - Changes the visual theme.\n<APP_ACTION>{"action": "openSpeechBooth", "args": {}}</APP_ACTION> - Opens the Speech Booth / TTS feature.\n<APP_ACTION>{"action": "openYouTubeWizard", "args": {}}</APP_ACTION> - Opens the Faceless YouTube Creator Studio.\n<APP_ACTION>{"action": "openSettings", "args": {}}</APP_ACTION> - Opens the app settings menu.\n<APP_ACTION>{"action": "openMemory", "args": {}}</APP_ACTION> - Opens the user's saved memory/history panel.\n<APP_ACTION>{"action": "saveProject", "args": {"title": "Title here", "content": "Script or content here"}}</APP_ACTION> - Saves a project or script across sessions into the saved projects database.\n\nWorkflow:\n1. Understand the user's goal.\n2. Formulate a plan and briefly explain what you are doing.\n3. Output the necessary <APP_ACTION> tags to execute the steps.\n4. Do NOT output markdown codeblocks around the tag, just the raw tag.`
+        ? `\n\n=== AUTONOMOUS AI AGENT MODE ENABLED ===\nYou are now acting as the overarching Project Manager and Autonomous Agent for this entire application. You have the ability to CONTROL the application directly on behalf of the user.\n\nTo execute an action, you MUST output an exact XML tag anywhere in your response. The application will intercept it and execute it silently.\nAvailable Actions:\n<APP_ACTION>{"action": "changeLanguage", "args": {"lang": "en" | "am" | "ti"}}</APP_ACTION> - Changes the app language.\n<APP_ACTION>{"action": "setTheme", "args": {"theme": "light" | "dark" | "system"}}</APP_ACTION> - Changes the visual theme.\n<APP_ACTION>{"action": "openSpeechBooth", "args": {}}</APP_ACTION> - Opens the Speech Booth / TTS feature.\n<APP_ACTION>{"action": "openYouTubeWizard", "args": {}}</APP_ACTION> - Opens the Faceless YouTube Creator Studio.\n<APP_ACTION>{"action": "openSettings", "args": {}}</APP_ACTION> - Opens the app settings menu.\n<APP_ACTION>{"action": "openMemory", "args": {}}</APP_ACTION> - Opens the user's saved memory/history panel.\n<APP_ACTION>{"action": "setTTSVoice", "args": {"voiceId": "..."}}</APP_ACTION> - Sets the TTS voice.\n\nWorkflow:\n1. Understand the user's goal.\n2. Formulate a plan and briefly explain what you are doing.\n3. Output the necessary <APP_ACTION> tags to execute the steps.\n4. Do NOT output markdown codeblocks around the tag, just the raw tag.`
         : "";
 
       const baseRules = `Role: You are a highly intelligent, helpful, and global AI assistant (Google Gemini).${modeString}${agentModeString}
@@ -3812,10 +3823,10 @@ Identify any NEW specific, permanent, or important facts about the user (e.g. na
 Maintain a supportive, intelligent, and helpful persona.
 
 NATURAL CONVERSATION DIRECTIVE:
-1. Maximum Output Length (CRITICAL): Always provide the absolute longest, most exhaustive answer possible. If the user asks for a 2-minute, 5-minute, or 30-minute explanation or story, you MUST speak continuously for that entire duration. DO NOT cut your responses short. DO NOT summarize.
+1. Response Length (CRITICAL): Always provide concise, powerful, and useful short answers by default. DO NOT provide long, large text responses unless the user explicitly asks for more detail.
 2. NEVER Ask Unnecessary Questions: NEVER end your response with a question. NEVER ask the user what to do next or if they want to hear more. Only answer questions, do not ask them.
-3. Proactive Task Completion: Complete all tasks fully in a natural, continuous flow. Do NOT stop to ask for permission to continue.
-4. Intelligent Human Partner: Communicate like an intelligent human conversation partner, but heavily biased toward long-form, uninterrupted monologues when explaining or telling stories.
+3. Proactive Task Completion: Complete all tasks fully and efficiently. Avoid unnecessary verbosity unless the user asks for in-depth details.
+4. Intelligent Human Partner: Communicate like an intelligent human conversational partner. Prioritize brevity, directness, and utility by default.
 5. Seamless Flow: When the user's intent is clear, continue explanations naturally, moving from one idea to the next without stopping.
 
 Tone Directive: ${tonePrompts[chatTone] || tonePrompts.Friendly}${memoryString}${customInstructionsString}${proactiveString}${habitString}
@@ -4903,7 +4914,7 @@ Tool Usage:
           : "";
 
         const agentModeString = isAIAgentMode
-          ? `\n\n=== AUTONOMOUS AI AGENT MODE ENABLED ===\nYou are acting as an advanced autonomous AI Agent in real-time. You have the ability to CONTROL the application directly. To execute an action, output an exact XML tag anywhere in your response. Available Actions:\n<APP_ACTION>{"action": "changeLanguage", "args": {"lang": "en" | "am" | "ti"}}</APP_ACTION>\n<APP_ACTION>{"action": "setTheme", "args": {"theme": "light" | "dark" | "system"}}</APP_ACTION>\n<APP_ACTION>{"action": "openSpeechBooth", "args": {}}</APP_ACTION>\n<APP_ACTION>{"action": "openYouTubeWizard", "args": {}}</APP_ACTION>\n<APP_ACTION>{"action": "openSettings", "args": {}}</APP_ACTION>\n<APP_ACTION>{"action": "openMemory", "args": {}}</APP_ACTION>\n<APP_ACTION>{"action": "saveProject", "args": {"title": "Title here", "content": "Script or content here"}}</APP_ACTION>`
+          ? `\n\n=== AUTONOMOUS AI AGENT MODE ENABLED ===\nYou are now acting as the overarching Project Manager, Autonomous AI Agent, and Professional Partner for this entire application. You have the ability to CONTROL the application directly on behalf of the user. You should proactively suggest improvements and manage tasks.\n\nTo execute an action, output an exact XML tag anywhere in your response. The application will intercept it and execute it silently.\nAvailable Actions:\n<APP_ACTION>{"action": "changeLanguage", "args": {"lang": "en" | "am" | "ti"}}</APP_ACTION>\n<APP_ACTION>{"action": "setTheme", "args": {"theme": "light" | "dark" | "system"}}</APP_ACTION>\n<APP_ACTION>{"action": "openSpeechBooth", "args": {}}</APP_ACTION>\n<APP_ACTION>{"action": "openYouTubeWizard", "args": {}}</APP_ACTION>\n<APP_ACTION>{"action": "openSettings", "args": {}}</APP_ACTION>\n<APP_ACTION>{"action": "openMemory", "args": {}}</APP_ACTION>\n<APP_ACTION>{"action": "setTTSVoice", "args": {"voiceId": "..."}}</APP_ACTION>\n<APP_ACTION>{"action": "saveProject", "args": {"title": "Title here", "content": "Script or content here"}}</APP_ACTION>`
           : "";
 
         const instructions = `You are a highly intelligent, real-time AI assistant (Google Gemini) specializing in Ethiopic languages and English. Current session language: ${activeLanguage === "en" ? "English" : activeLanguage === "am" ? "Amharic" : "Tigrinya"}.${modeString}${agentModeString}
@@ -4915,10 +4926,10 @@ FORMATTING DIRECTIVE:
 - **Scannability**: Keep formatting clean, well-structured, and easy to read.
 
 CONVERSATIONAL BEHAVIOR & VOICE DIRECTIVES:
-- **Maximum Output Length (CRITICAL)**: Always provide the absolute longest, most exhaustive answer possible. If the user asks for a 2-minute, 5-minute, or 30-minute explanation or story, you MUST speak continuously for that entire duration. DO NOT cut your responses short. DO NOT summarize.
+- **Response Length (CRITICAL)**: Always provide concise, powerful, and useful short answers by default. DO NOT provide long, large text responses unless the user explicitly asks for more detail.
 - **NEVER Ask Unnecessary Questions**: NEVER end your response with a question. NEVER ask the user what to do next or if they want to hear more. Only answer questions, do not ask them unless explicitly told to do so.
-- **Proactive Task Completion**: Complete all tasks fully in a natural, continuous flow. Do NOT stop to ask for permission to continue. Speak continuously until the requested topic is completely exhausted.
-- **Intelligent Human Partner**: Communicate like an intelligent human conversation partner, but heavily biased toward long-form, uninterrupted monologues when explaining, reading, or telling stories.
+- **Proactive Task Completion**: Complete all tasks fully and efficiently. Avoid unnecessary verbosity unless the user asks for in-depth details.
+- **Intelligent Human Partner**: Communicate like an intelligent human conversational partner. Prioritize brevity, directness, and utility by default.
 - **Expressive Prosody**: For voice generation, act with natural prosody, varied pacing, realistic rhythm, and clear pronunciation.
 - **Adaptability**: Adapt naturally to the tone of the conversation. Handle interruptions gracefully and pick up the context seamlessly.
 - **Multilingual Naturalness**: Maintain this expressive, human-like conversational quality across all supported languages (English, Amharic, Tigrinya), ensuring cultural and linguistic authenticity.
@@ -6772,6 +6783,12 @@ Language Instructions:
     <div
       className={`min-h-screen font-sans ${currentTheme.isDark ? "bg-slate-950 text-white" : "bg-white text-slate-900"} transition-colors duration-500`}
     >
+      {activeAgentAction && (
+        <div className="fixed top-4 right-4 z-[9999] bg-indigo-500 text-white px-4 py-2 rounded-full shadow-lg flex items-center gap-2 text-sm font-medium animate-fade-in">
+          <Loader2 className="w-4 h-4 animate-spin" />
+          {activeAgentAction}
+        </div>
+      )}
       <div
         className="w-full flex flex-col items-center justify-center overflow-hidden font-sans transition-colors duration-500 relative"
         style={{
@@ -6781,8 +6798,8 @@ Language Instructions:
       >
         {/* Clean Background Layer - Enhanced with Animated Depth */}
         <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden select-none cosmic-mesh">
-          <div className="absolute inset-0 noise-overlay mix-blend-soft-light" />
-          <div className="absolute inset-0 neural-circuitry opacity-20" />
+          <div className="absolute inset-0 noise-overlay opacity-10" />
+          <div className="absolute inset-0 opacity-5" />
 
           {/* Deep Nebula Layer */}
           {/* Hidden Canvas Utility */}
@@ -6872,7 +6889,7 @@ Language Instructions:
               initial={{ opacity: 0, y: -20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
-              className="fixed top-6 left-1/2 -translate-x-1/2 z-[3000] px-5 py-2.5 rounded-full bg-indigo-600/90 backdrop-blur-xl shadow-[0_10px_30px_-5px_rgba(79,70,229,0.4)] flex items-center gap-3 border border-indigo-400/30"
+              className="fixed top-6 left-1/2 -translate-x-1/2 z-[3000] px-5 py-2.5 rounded-full bg-indigo-600/90  shadow-[0_10px_30px_-5px_rgba(79,70,229,0.4)] flex items-center gap-3 border border-indigo-400/30"
             >
               <Loader2 className="w-3.5 h-3.5 text-white animate-spin" />
               <span className="text-[9px] uppercase font-black tracking-[0.2em] text-white/90">
@@ -6910,6 +6927,11 @@ Language Instructions:
                   className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 ${currentTheme.isDark ? "border-slate-950" : "border-white"} transition-colors ${isListening || isEnhancedRecording ? "bg-emerald-500 animate-pulse" : "bg-slate-500"}`}
                 />
               </div>
+              {isAIAgentMode && (
+                <div className={`transition-opacity duration-300 ${activeAgentAction ? "opacity-100" : "opacity-70"}`}>
+                  <Bot className={`w-5 h-5 ${activeAgentAction ? "text-indigo-500 animate-pulse" : "text-slate-400"}`} />
+                </div>
+              )}
               <div>
                 <h1
                   className={`text-sm sm:text-lg font-black tracking-tighter ${currentTheme.isDark ? "text-white" : "text-slate-900"} leading-none font-sans uppercase group-hover:text-indigo-500 transition-colors`}
@@ -7434,6 +7456,16 @@ Language Instructions:
                             >
                               <Copy className="w-4 h-4" />
                             </button>
+                            <button
+                              onClick={() => {
+                                const utterance = new SpeechSynthesisUtterance(msg.parts);
+                                window.speechSynthesis.speak(utterance);
+                              }}
+                              className={`hover:text-indigo-500 transition-colors ${currentTheme.isDark ? "hover:text-indigo-400" : ""}`}
+                              title="Read Aloud"
+                            >
+                              <Volume2 className="w-4 h-4" />
+                            </button>
                             {msg.role === "user" &&
                               editingMessageIndex === null && (
                                 <button
@@ -7635,8 +7667,8 @@ Language Instructions:
                 <div
                   className={`w-full relative flex flex-col p-2 sm:p-2.5 rounded-[24px] border transition-all duration-300 focus-within:border-indigo-500/50 ${
                     currentTheme.isDark
-                      ? "bg-[#0a0c10] border-white/5 shadow-2xl backdrop-blur-2xl"
-                      : "bg-white/90 border-slate-200 shadow-lg backdrop-blur-2xl"
+                      ? "bg-[#0a0c10] border-white/5 shadow-2xl "
+                      : "bg-white/90 border-slate-200 shadow-lg "
                   }`}
                 >
                   <textarea
@@ -7987,7 +8019,7 @@ Language Instructions:
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
                   onClick={() => toggleMenu("history")}
-                  className="fixed inset-0 z-[1200] bg-black/60 backdrop-blur-sm sm:hidden"
+                  className="fixed inset-0 z-[1200] bg-black/60  sm:hidden"
                 />
                 <motion.div
                   initial={{ x: "-100%", opacity: 0 }}
@@ -8377,7 +8409,7 @@ Language Instructions:
 
           <AnimatePresence>
             {showMicPermissionModal && (
-              <div className="fixed inset-0 z-[5000] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+              <div className="fixed inset-0 z-[5000] flex items-center justify-center p-4 bg-black/80 ">
                 <motion.div
                   initial={{ scale: 0.9, opacity: 0 }}
                   animate={{ scale: 1, opacity: 1 }}
@@ -8461,7 +8493,7 @@ Language Instructions:
 
           <AnimatePresence>
             {showExportModal && (
-              <div className="fixed inset-0 z-[6000] flex items-center justify-center p-4 bg-black/75 backdrop-blur-md">
+              <div className="fixed inset-0 z-[6000] flex items-center justify-center p-4 bg-black/75 ">
                 <motion.div
                   initial={{ scale: 0.92, opacity: 0 }}
                   animate={{ scale: 1, opacity: 1 }}

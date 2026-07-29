@@ -432,8 +432,9 @@ Chat History (Recent Context):
 ${historyText}`;
 
   try {
-    const result = await callGeminiAPI("gemini-2.5-flash", [{ role: 'user', parts: [{ text: prompt }] }], {
-      responseMimeType: "application/json"
+    const result = await callGeminiAPI("gemini-3.1-pro-preview", [{ role: 'user', parts: [{ text: prompt }] }], {
+      responseMimeType: "application/json",
+      aiModelMode: "thinking"
     });
 
     let text = result.text || "[]";
@@ -447,16 +448,55 @@ ${historyText}`;
     return JSON.parse(text);
   } catch (err: any) {
     console.error("Failed to generate suggestions:", err);
-    if (err.message?.includes("429") || err.message?.toLowerCase().includes("quota")) {
-      throw new Error("QUOTA_EXCEEDED");
-    }
     return [];
   }
 };
 
 /**
- * Text refinement helper
+ * Image Analysis helper
  */
+export const analyzeImage = async (imageUrl: string, prompt: string): Promise<string> => {
+  try {
+    const response = await fetch("/api/gemini/analyzeImage", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Accept": "application/json" },
+      body: JSON.stringify({ imageUrl, prompt }),
+    });
+
+    if (!response.ok) {
+      throw new Error("Image analysis failed");
+    }
+
+    const data = await response.json();
+    return data.text || "";
+  } catch (err) {
+    console.error("Image analysis failed:", err);
+    throw err;
+  }
+};
+
+/**
+ * Video Analysis helper
+ */
+export const analyzeVideo = async (videoUrl: string, prompt: string): Promise<string> => {
+  try {
+    const response = await fetch("/api/gemini/analyzeVideo", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Accept": "application/json" },
+      body: JSON.stringify({ videoUrl, prompt }),
+    });
+
+    if (!response.ok) {
+      throw new Error("Video analysis failed");
+    }
+
+    const data = await response.json();
+    return data.text || "";
+  } catch (err) {
+    console.error("Video analysis failed:", err);
+    throw err;
+  }
+};
 export const refineText = async (text: string, instruction: string): Promise<string> => {
   try {
     const result = await callGeminiAPI("gemini-2.5-flash", [{ role: 'user', parts: [{ text: `${instruction}\n\nText: "${text}"` }] }]);

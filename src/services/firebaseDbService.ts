@@ -18,9 +18,11 @@ import { auth } from "./firebaseAuthService";
 import firebaseConfig from "../../firebase-applet-config.json";
 
 // Initialize Firestore robustly with long polling for proxy/iframe-embedded environments
+const DATABASE_ID = "ai-studio-aigeezkeyboard-dace50ee-1fa2-46b6-adbc-f0bf24ed5201";
+
 export const db = initializeFirestore(app, {
   experimentalForceLongPolling: true,
-});
+}, DATABASE_ID);
 
 export enum OperationType {
   CREATE = 'create',

@@ -869,7 +869,7 @@ Please wait a brief moment and try again. If you are developing locally, please 
 
       const ai = new GoogleGenAI({ apiKey });
       const interaction = await retryRequest(() => ai.interactions.create({
-        model: "gemini-2.5-flash",
+        model: "gemini-3.1-pro-preview",
         input: [
           { type: "image", data: base64Data, mime_type: contentType },
           { type: "text", text: prompt || "Analyze this image and describe its key visual elements." }
@@ -879,6 +879,42 @@ Please wait a brief moment and try again. If you are developing locally, please 
       res.json({ text: interaction.output_text });
     } catch (error: any) {
       console.error("Gemini AnalyzeImage Proxy Error:", error);
+      const { code, status, message } = parseGeminiError(error);
+      res.status(code).json({ error: message, status });
+    }
+  });
+
+  app.post("/api/gemini/analyzeVideo", async (req, res) => {
+    const { videoUrl, prompt } = req.body;
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      return res
+        .status(500)
+        .json({ error: "GEMINI_API_KEY is not configured on the server." });
+    }
+
+    if (!videoUrl) {
+      return res.status(400).json({ error: "videoUrl is required" });
+    }
+
+    try {
+      console.log(`[Analyze Video] Fetching video from url: ${videoUrl}`);
+      // Note: In a real app, we might need a more robust way to handle video file uploads or remote URIs
+      // Gemini Interactions API expects data for video if inline, or file_uri if uploaded.
+      // This is a simplified proxy assuming it can handle the URL or needs to be downloaded.
+      
+      const ai = new GoogleGenAI({ apiKey });
+      const interaction = await retryRequest(() => ai.interactions.create({
+        model: "gemini-3.1-pro-preview",
+        input: [
+          { type: "file", file_uri: videoUrl, mime_type: "video/mp4" }, // Simplified assumption
+          { type: "text", text: prompt || "Analyze this video and describe its key content." }
+        ]
+      }));
+
+      res.json({ text: interaction.output_text });
+    } catch (error: any) {
+      console.error("Gemini AnalyzeVideo Proxy Error:", error);
       const { code, status, message } = parseGeminiError(error);
       res.status(code).json({ error: message, status });
     }

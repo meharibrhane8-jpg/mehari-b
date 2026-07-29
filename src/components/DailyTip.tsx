@@ -25,11 +25,17 @@ export const DailyTip: React.FC<DailyTipProps> = ({ isDark }) => {
       `Need to focus? Enable AI-mode and ask me to help you draft your content efficiently this ${timeContext}.`,
       `Take a moment this ${timeContext} to review your saved memories—they grow with you!`
     ];
-    
-    // Pick a random tip to keep it fresh, or based on time. 
-    // To be truly contextual, we could fetch from server, but client-side is fine for a start.
-    const randomTip = tips[Math.floor(Math.random() * tips.length)];
-    setTip(randomTip);
+
+    const today = new Date().toISOString().split('T')[0];
+    const lastTipDate = localStorage.getItem('geez_last_tip_date');
+
+    if (lastTipDate !== today) {
+      const randomTip = tips[Math.floor(Math.random() * tips.length)];
+      setTip(randomTip);
+      localStorage.setItem('geez_last_tip_date', today);
+    } else {
+      setIsVisible(false);
+    }
   }, []);
 
   if (!isVisible || !tip) return null;

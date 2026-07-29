@@ -566,7 +566,7 @@ export const FileAttachmentModule: React.FC<FileAttachmentModuleProps> = ({
       {/* --- CAMERA DIALOG MODAL --- */}
       {showCameraModal && (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={() => setShowCameraModal(false)} />
+          <div className="absolute inset-0 bg-black/80 " onClick={() => setShowCameraModal(false)} />
           <div className={`relative w-full max-w-md rounded-3xl overflow-hidden shadow-2xl border ${
             currentTheme.isDark ? "bg-[#131313] border-white/10" : "bg-white border-zinc-200"
           }`}>
@@ -602,7 +602,7 @@ export const FileAttachmentModule: React.FC<FileAttachmentModuleProps> = ({
                   <div className="absolute top-3 right-3 flex gap-2">
                     <button 
                       onClick={toggleCameraFacing}
-                      className="p-2 rounded-full bg-black/60 hover:bg-black/90 text-white backdrop-blur transition-all"
+                      className="p-2 rounded-full bg-black/60 hover:bg-black/90 text-white  transition-all"
                       title="Flip Camera"
                     >
                       <RefreshCw className="w-4 h-4" />
@@ -651,7 +651,7 @@ export const FileAttachmentModule: React.FC<FileAttachmentModuleProps> = ({
       {/* --- GOOGLE DRIVE SELECTOR DIALOG MODAL --- */}
       {showDriveModal && (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={() => setShowDriveModal(false)} />
+          <div className="absolute inset-0 bg-black/80 " onClick={() => setShowDriveModal(false)} />
           <div className={`relative w-full max-w-2xl rounded-3xl overflow-hidden shadow-2xl border h-[80vh] flex flex-col ${
             currentTheme.isDark ? "bg-[#131313] border-white/10" : "bg-white border-zinc-200"
           }`}>
